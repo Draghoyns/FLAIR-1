@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 import geopandas as gpd
 import rasterio
+import matplotlib.pyplot as plt
 
 from src.zone_detect.slicing_job import create_box_from_bounds
 from src.zone_detect.test.tiles import patch_weights, total_weights
@@ -177,8 +178,6 @@ if __name__ == "__main__":
     local_weights = patch_weights(patch_size)
 
     # visualize
-    import matplotlib.pyplot as plt
-    import numpy as np
 
     plt.plot(local_weights)
     plt.title("Weights")

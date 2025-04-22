@@ -1,3 +1,4 @@
+from matplotlib import pyplot as plt
 import numpy as np
 
 
@@ -103,9 +104,12 @@ def total_weights(
     patch_size: int,
     query_bounds: list[int],
     stride: int,
-) -> np.ndarray:
+    track_steps: bool = False,
+) -> tuple[np.ndarray, list[np.ndarray]]:
     """Given the query, compute the total distance weights
     to which divide the average for each pixel"""
+
+    steps = []
 
     x_min, x_max, y_min, y_max = query_bounds
     image_size_x, image_size_y = image_size
@@ -150,6 +154,8 @@ def total_weights(
                     local_y_tile_start : local_y_tile_start + h,
                     local_x_tile_start : local_x_tile_start + w,
                 ]
+                if track_steps:
+                    steps.append(map.copy())
     # no inversion
     # no normalization
-    return map
+    return map, steps

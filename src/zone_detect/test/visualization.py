@@ -1,5 +1,7 @@
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
+from matplotlib.colors import Normalize
+import numpy as np
 
 
 def viz_slicing(img_size: tuple[int, int], patches: set) -> None:
@@ -48,4 +50,36 @@ def viz_slicing(img_size: tuple[int, int], patches: set) -> None:
     plt.ylim(y_size, 0)
     plt.xlabel("X Coordinate")
     plt.ylabel("Y Coordinate")
+    plt.show()
+
+
+def visualize_total_weights_steps(steps: list[np.ndarray], patch_size: int):
+    cmap = plt.get_cmap("nipy_spectral")
+    norm = Normalize(vmin=0, vmax=6.5)
+
+    fig, ax = plt.subplots()
+
+    im = ax.imshow(steps[0], cmap=cmap, norm=norm)
+    fig.colorbar(im, ax=ax)
+    ax.set_title("Tile Step 0")
+
+    ax.set_xlim(0, patch_size)
+    ax.set_ylim(patch_size, 0)
+
+    def update(i):
+        im.set_data(steps[i])
+        ax.set_title(f"Tile Step {i}")
+        fig.canvas.draw_idle()
+
+    def on_key(event):
+        nonlocal step
+        if event.key == "right":
+            step = (step + 1) % len(steps)
+            update(step)
+        elif event.key == "left":
+            step = (step - 1) % len(steps)
+            update(step)
+
+    step = 0
+    fig.canvas.mpl_connect("key_press_event", on_key)
     plt.show()
