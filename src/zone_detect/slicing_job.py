@@ -7,6 +7,9 @@ from pathlib import Path
 from shapely import Polygon
 from shapely.geometry import box, mapping
 
+from src.zone_detect.test.geo_operation import slice_geo
+from src.zone_detect.test.pixel_operation import slice_pixels
+
 
 def create_polygon_from_bounds(
     x_min: float, x_max: float, y_min: float, y_max: float
@@ -122,3 +125,23 @@ def slice_extent(
         )
 
     return gdf_output, profile, resolution, [img_width, img_height]
+
+
+def slice_extent_separate(
+    in_img: str | Path,
+    patch_size: int,
+    margin: int,
+    output_path: str | Path,
+    output_name: str,
+    write_dataframe: bool,
+    stride: int,
+) -> tuple[gpd.GeoDataFrame, dict, tuple[float, float], list[int]]:
+
+    img_size = rasterio.open(in_img).read(1).shape
+    patches = slice_pixels(img_size, patch_size, margin, stride)
+
+    geo_slices = slice_geo(
+        in_img, margin, output_path, output_name, write_dataframe, patches
+    )
+
+    return geo_slices

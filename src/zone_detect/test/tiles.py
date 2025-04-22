@@ -92,6 +92,8 @@ def patch_weights(patch_size: int) -> np.ndarray:
         for j in range(patch_size):
             dist[i, j] = max(abs(i - center), abs(j - center))
 
+    # maybe use a gaussian kernel
+
     # smooth exponential decay
 
     sigma = 0.5
