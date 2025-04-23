@@ -3,7 +3,7 @@ def slice_pixels(
     patch_size: int,
     margin: int,
     stride: int,
-) -> set[tuple[int, int, int, int]]:
+) -> list[tuple[int, int, int, int]]:
 
     def _add_patch_if_valid(patches, x_min, y_min):
         x_max = x_min + patch_size
@@ -49,4 +49,4 @@ def slice_pixels(
         x = x_size - patch_size
         patches = _add_patch_if_valid(patches, x, y)
 
-    return patches
+    return sorted(patches)

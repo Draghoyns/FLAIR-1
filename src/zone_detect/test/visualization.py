@@ -4,7 +4,7 @@ from matplotlib.colors import Normalize
 import numpy as np
 
 
-def viz_slicing(img_size: tuple[int, int], patches: set) -> None:
+def viz_slicing(img_size: tuple[int, int], patches: set | list) -> None:
 
     x_size, y_size = img_size
     _, ax = plt.subplots()
