@@ -3,6 +3,9 @@ from matplotlib.patches import Rectangle
 from matplotlib.colors import Normalize
 import numpy as np
 
+from src.zone_detect.test.pixel_operation import slice_pixels
+from src.zone_detect.test.tiles import total_weights
+
 
 def viz_slicing(img_size: tuple[int, int], patches: set) -> None:
 
@@ -83,3 +86,31 @@ def visualize_total_weights_steps(steps: list[np.ndarray], patch_size: int):
     step = 0
     fig.canvas.mpl_connect("key_press_event", on_key)
     plt.show()
+
+
+if __name__ == "__main__":
+    img_size = 10, 10
+    patch_size = 3
+    margin = 0
+    stride = 2
+    query = [0, 10, 0, 10]
+
+    patches = slice_pixels(
+        img_size=img_size,
+        patch_size=patch_size,
+        margin=margin,
+        stride=stride,
+    )
+
+    viz_slicing(img_size, patches)
+
+    map, steps = total_weights(
+        img_size,
+        patch_size,
+        query,
+        stride,
+        track_steps=True,
+    )
+
+    # visualize the steps
+    visualize_total_weights_steps(steps, patch_size)

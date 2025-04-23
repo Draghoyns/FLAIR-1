@@ -38,17 +38,17 @@ def slice_geo(
     for patch in pixel_patches:
         x_min_patch, x_max_patch, y_min_patch, y_max_patch = patch
 
-        # geo conversion and big patch (add margin)
-        left_patch = x_min_patch * resolution[0] + geo_margin[0]
-        right_patch = x_max_patch * resolution[0] - geo_margin[0]
-        bottom_patch = y_min_patch * resolution[1] + geo_margin[1]
-        top_patch = y_max_patch * resolution[1] - geo_margin[1]
+        # geo conversion, small patch
+        left = x_min_patch * resolution[0] + min_x
+        right = x_max_patch * resolution[0] + min_x
+        bottom = y_min_patch * resolution[1] + min_y
+        top = y_max_patch * resolution[1] + min_y
 
-        # absolute position
-        left = min_x + left_patch
-        right = min_x + right_patch
-        bottom = min_y + bottom_patch
-        top = min_y + top_patch
+        # big patch (add margin)
+        left_patch = left - geo_margin[0]
+        right_patch = right + geo_margin[0]
+        bottom_patch = bottom - geo_margin[1]
+        top_patch = top + geo_margin[1]
 
         # Ensure patches don't go outside raster bounds after adding margins
         right = min(right, max_x)
