@@ -66,8 +66,8 @@ def slice_geo(
 
         # Unique identifier for patch
         col, row = (
-            int((bottom_big_patch - min_y) // resolution[0]) + 1,
-            int((left_big_patch - min_x) // resolution[1]) + 1,
+            int((left_patch - min_x) // resolution[0]) + 1,
+            int((bottom_patch - min_y) // resolution[1]) + 1,
         )
         new_patch = (
             round(left, 6),
@@ -90,10 +90,10 @@ def slice_geo(
                 "right_o": right_overall,
                 "top_o": top_overall,
                 "geometry": create_box_from_bounds(
-                    left_big_patch,
-                    right_big_patch,
-                    bottom_big_patch,
-                    top_big_patch,
+                    left_patch,
+                    right_patch,
+                    bottom_patch,
+                    top_patch,
                 ),
             }
             tmp_list.append(row_d)

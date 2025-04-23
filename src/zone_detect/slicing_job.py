@@ -136,7 +136,7 @@ def slice_extent_separate(
     stride: int,
 ) -> tuple[gpd.GeoDataFrame, dict, tuple[float, float], list[int]]:
 
-    img_size = rasterio.open(in_img).read(1).shape
+    img_size = rasterio.open(in_img).read(1).shape[::-1]  # (width, height)
     patches = slice_pixels(img_size, patch_size, margin, stride)
 
     geo_slices = slice_geo(
