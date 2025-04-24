@@ -54,6 +54,7 @@ def stitching(
     index: np.ndarray,  # really though ?
     out: DatasetWriter,
     method: str,
+    stride: int,
 ) -> tuple[np.ndarray, Window]:
     """Output of this is ready to be written"""
 
@@ -113,9 +114,7 @@ def stitching(
 
         # help averaging
         size = out.profile["width"], out.profile["height"]
-        overlapping = patch_overlap(
-            size, img_pixels_detection, sliced_box, config["stride"]
-        )
+        overlapping = patch_overlap(size, img_pixels_detection, sliced_box, stride)
 
         # note : be really careful where you have geo coord and pixel coord
         # TODO : stay at pixel level the longest possible
@@ -132,9 +131,7 @@ def stitching(
             # get weights
             weights = patch_weights(img_pixels_detection)
             # get distance map
-            distance_map = total_weights(
-                size, img_pixels_detection, sliced_box, config["stride"]
-            )
+            distance_map = total_weights(size, img_pixels_detection, sliced_box, stride)
             prediction = prediction * weights / distance_map
             prediction = prediction + possible_overlap
 

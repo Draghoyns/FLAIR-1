@@ -4,6 +4,7 @@ import warnings
 
 from geopandas import GeoDataFrame
 from src.zone_detect.slicing_job import slice_extent
+from src.zone_detect.test.metrics import compute_metrics
 import torch
 from tqdm import tqdm
 import rasterio
@@ -268,17 +269,16 @@ def main():
 
     model = prepare_model(config, device)
 
+    # initializing
+    dataset = Sliced_Dataset(
+        dataframe=GeoDataFrame(),
+        img_path=input_img_path,
+        resolution=tuple(),
+        bands=channels,
+        patch_detection_size=img_pixels_detection,
+        norma_dict=norma_task,
+    )
     if compare:
-        # initializing
-        dataset = Sliced_Dataset(
-            dataframe=GeoDataFrame(),
-            img_path=input_img_path,
-            resolution=tuple(),
-            bands=channels,
-            patch_detection_size=img_pixels_detection,
-            norma_dict=norma_task,
-        )
-
         # TODO
         padding_list = config["strategies"]["padding_overall"]
         if padding_list == []:
@@ -308,7 +308,6 @@ def main():
                     config["margin"] = margin
                     stride_list = get_stride(config)
                     for stride in stride_list:
-
                         for method in stitching_methods:
 
                             # slicing
@@ -365,6 +364,7 @@ def main():
                                         index,
                                         out,
                                         method,
+                                        stride,
                                     )
                                     # write
                                     if output_type == "argmax":
@@ -385,15 +385,6 @@ def main():
 
     else:
 
-        # initializing
-        dataset = Sliced_Dataset(
-            dataframe=GeoDataFrame(),
-            img_path=input_img_path,
-            resolution=tuple(),
-            bands=channels,
-            patch_detection_size=img_pixels_detection,
-            norma_dict=norma_task,
-        )
         # default configuration : exact clipping and default sized tiling
         # slicing
         stride = get_stride(config)[0]
@@ -440,7 +431,13 @@ def main():
             for prediction, index in zip(predictions, indices):
 
                 prediction, window = stitching(
-                    config, sliced_dataframe, prediction, index, out, "exact_clipping"
+                    config,
+                    sliced_dataframe,
+                    prediction,
+                    index,
+                    out,
+                    "exact_clipping",
+                    stride,
                 )
                 # write
                 if output_type == "argmax":
@@ -458,6 +455,12 @@ def main():
         )
 
     dataset.close_raster()
+
+    if compare:
+        compute_metrics(
+            config,
+        )
+
     sys.stdout = sys.__stdout__
 
 
