@@ -2,8 +2,15 @@ import os
 from pathlib import Path
 import geopandas as gpd
 import rasterio
+from shapely import Polygon
+from shapely.geometry import box
+from src.zone_detect.test.test import geogr_patches, ground_truth_geoconv
 
-from src.zone_detect.slicing_job import create_box_from_bounds
+
+def create_box_from_bounds(
+    x_min: float, x_max: float, y_min: float, y_max: float
+) -> Polygon:
+    return box(x_min, y_max, x_max, y_min)
 
 
 def slice_geo(
@@ -12,8 +19,10 @@ def slice_geo(
     output_path: str | Path,
     output_name: str,
     write_dataframe: bool,
-    patches: set[tuple[int, int, int, int]],
+    patches: list[tuple[int, int, int, int]],
 ) -> tuple[gpd.GeoDataFrame, dict, tuple[float, float], list[int]]:
+
+    piiiiiii = ground_truth_geoconv(in_img, 512, margin, 384)
 
     # get geo info
     with rasterio.open(in_img) as src:
@@ -37,6 +46,7 @@ def slice_geo(
 
     for patch in pixel_patches:
         x_min_patch, x_max_patch, y_min_patch, y_max_patch = patch
+        # patch without the margin
 
         # geo conversion, small patch
         left = x_min_patch * resolution[0] + min_x
@@ -54,12 +64,11 @@ def slice_geo(
         right = min(right, max_x)
         top = min(top, max_y)
 
-        col, row = (
-            int((bottom_patch - min_y) // resolution[0]) + 1,
-            int((left_patch - min_x) // resolution[1]) + 1,
-        )
-
         # Unique identifier for patch
+        col, row = (
+            int((left_patch - min_x) // resolution[0]) + 1,
+            int((bottom_patch - min_y) // resolution[1]) + 1,
+        )
         new_patch = (
             round(left, 6),
             round(bottom, 6),

@@ -7,7 +7,7 @@ from src.zone_detect.test.pixel_operation import slice_pixels
 from src.zone_detect.test.tiles import total_weights
 
 
-def viz_slicing(img_size: tuple[int, int], patches: set) -> None:
+def viz_slicing(img_size: tuple[int, int], patches: set | list) -> None:
 
     x_size, y_size = img_size
     _, ax = plt.subplots()

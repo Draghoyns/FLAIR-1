@@ -4,10 +4,9 @@ import rasterio
 import geopandas as gpd
 
 from pathlib import Path
-from shapely import Polygon
 from shapely.geometry import box, mapping
 
-from src.zone_detect.test.geo_operation import slice_geo
+from src.zone_detect.test.geo_operation import slice_geo, create_box_from_bounds
 from src.zone_detect.test.pixel_operation import slice_pixels
 
 
@@ -15,12 +14,6 @@ def create_polygon_from_bounds(
     x_min: float, x_max: float, y_min: float, y_max: float
 ) -> dict:
     return mapping(box(x_min, y_max, x_max, y_min))
-
-
-def create_box_from_bounds(
-    x_min: float, x_max: float, y_min: float, y_max: float
-) -> Polygon:
-    return box(x_min, y_max, x_max, y_min)
 
 
 def slice_extent(
@@ -32,9 +25,12 @@ def slice_extent(
     write_dataframe: bool,
     stride: int,
 ) -> tuple[gpd.GeoDataFrame, dict, tuple[float, float], list[int]]:
+
+    img_width, img_height = rasterio.open(in_img).read(1).shape
+    patches = slice_pixels((img_width, img_height), patch_size, margin, stride)
+
     with rasterio.open(in_img) as src:
         profile = src.profile
-        img_width, img_height = profile["width"], profile["height"]
         left_overall, bottom_overall, right_overall, top_overall = src.bounds
         resolution = abs(round(src.res[0], 5)), abs(round(src.res[1], 5))
 
@@ -53,13 +49,16 @@ def slice_extent(
     min_x, min_y = left_overall, bottom_overall
     max_x, max_y = right_overall, top_overall
 
+    # initializing
     tmp_list = []
-    existing_patches = set()  # To track unique patches
+    geo_patches = set()  # To track unique patches
 
-    for x_coord in np.arange(min_x - geo_margin[0], max_x + geo_margin[0], geo_step[0]):
-        for y_coord in np.arange(
-            min_y - geo_margin[1], max_y + geo_margin[1], geo_step[1]
-        ):
+    X = np.arange(min_x - geo_margin[0], max_x + geo_margin[0], geo_step[0])
+    Y = np.arange(min_y - geo_margin[1], max_y + geo_margin[1], geo_step[1])
+
+    for x_coord in X:
+        for y_coord in Y:
+            # for each patch
 
             # Adjust last column to ensure proper alignment
             if x_coord + geo_output_size[0] > max_x + geo_margin[0]:
@@ -68,7 +67,7 @@ def slice_extent(
             if y_coord + geo_output_size[1] > max_y + geo_margin[1]:
                 y_coord = max_y + geo_margin[1] - geo_output_size[1]
 
-            # Define patch boundaries
+            # Define patch boundaries, geo, absolute position
             left = x_coord + geo_margin[0]
             right = x_coord + geo_output_size[0] - geo_margin[0]
             bottom = y_coord + geo_margin[1]
@@ -91,8 +90,8 @@ def slice_extent(
                 round(top, 6),
             )
 
-            if new_patch not in existing_patches:
-                existing_patches.add(new_patch)  # Track unique patches
+            if new_patch not in geo_patches:
+                geo_patches.add(new_patch)  # Track unique patches
                 row_d = {
                     "id": str(f"{1}-{row}-{col}"),
                     "output_id": output_name,
@@ -137,7 +136,7 @@ def slice_extent_separate(
     stride: int,
 ) -> tuple[gpd.GeoDataFrame, dict, tuple[float, float], list[int]]:
 
-    img_size = rasterio.open(in_img).read(1).shape
+    img_size = rasterio.open(in_img).read(1).shape[::-1]  # (width, height)
     patches = slice_pixels(img_size, patch_size, margin, stride)
 
     geo_slices = slice_geo(

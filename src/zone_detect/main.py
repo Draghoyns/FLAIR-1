@@ -3,7 +3,7 @@ import datetime
 import warnings
 
 from geopandas import GeoDataFrame
-from src.zone_detect.slicing_job import slice_extent
+from src.zone_detect.slicing_job import slice_extent, slice_extent_separate
 from src.zone_detect.test.metrics import compute_metrics
 import torch
 from tqdm import tqdm
@@ -176,7 +176,7 @@ def conf_log(
 # __________Prepare objects___________#
 def prepare_tiles(config: dict, stride: int) -> tuple[GeoDataFrame, dict, tuple]:
     ## slicing extent for overlapping detection
-    sliced_dataframe, profile, resolution, img_size = slice_extent(
+    sliced_dataframe, profile, resolution, img_size = slice_extent_separate(
         in_img=config["input_img_path"],
         patch_size=config["img_pixels_detection"],
         margin=config["margin"],

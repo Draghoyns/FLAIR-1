@@ -62,13 +62,13 @@ def stitching(
     img_pixels_detection = config["img_pixels_detection"]
     output_type: str = config["output_type"]  # we only handle argmax for now
 
-    window = Window(col_off=0, row_off=0, width=0, height=0)  # type: ignore
+    window = Window(col_off=0, row_off=0, width=img_pixels_detection, height=img_pixels_detection)  # type: ignore
     sliced_box = [
         sliced_dataframe.at[index[0], "left"],
         sliced_dataframe.at[index[0], "right"],
         sliced_dataframe.at[index[0], "bottom"],
         sliced_dataframe.at[index[0], "top"],
-    ]
+    ]  # geo
 
     if method == "exact_clipping" or output_type == "class_prob":
         # default
