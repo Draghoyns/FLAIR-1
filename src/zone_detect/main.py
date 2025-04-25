@@ -247,6 +247,22 @@ def main():
     # setting up device and log
     config, device, use_gpu, compare = setup(args)
 
+    run_pipeline(config, device, use_gpu, compare)
+
+
+def run_from_config(config: dict) -> None:
+    """Run the pipeline from a config file"""
+    # setting up device and log
+    device, use_gpu = setup_device(config)
+    config, compare = setup_out_path(config, None)
+
+    run_pipeline(config, device, use_gpu, compare)
+
+
+def run_pipeline(
+    config: dict, device: torch.device, use_gpu: bool, compare: bool
+) -> None:
+
     print("    [ ] no comparison" if not compare else "    [x] comparison")
     # extracting config parameters
     input_img_path = config["input_img_path"]
