@@ -5,14 +5,14 @@ input_img_path: ../path/to/raster/file.tif
 channels: [1, 2, 3, 4, 5]
 
 truth_path : ../path/to/truth/file.tif
-metrics_out: ../path/to/metrics/file.csv # None = new file
+metrics_out: ../path/to/metrics/file.json # None = new file
 
 img_pixels_detection: 512
 margin: 128
 output_type: "argmax"
 n_classes: 19
 
-
+#### MODEL
 model_weights: ../path/to/model/weights.pth  #e.g., FLAIR-INC_rgbie_15cl_resnet34-unet_weights.pth
 model_framework: 
     model_provider: HuggingFace
@@ -29,11 +29,13 @@ num_worker: 2
 
 write_dataframe: False
 
+#### NORMALIZATION
 norma_task: 
   - norm_type: custom 
     norm_means: [105.08, 110.87, 101.82, 106.38, 53.26]
     norm_stds: [52.17, 45.38, 44, 39.69, 79.3]
 
+#### COMPARISON PARAMETERS
 overlap_strat: 
 
 strategies:
@@ -43,7 +45,28 @@ strategies:
     stride_range: []
   stitching:
     enabled : False
-    method: ["average", "max", "exact_clipping"]
+    method: ["average", "max", "exact-clipping"]
     margin: []
   padding_overall: ~ # mirror, zero...
 
+#### CLASSES
+classes: # k = value in MSK : v = [weight, name]
+    1:  [1, 'building']
+    2:  [1, 'pervious surface']
+    3:  [1, 'impervious surface']
+    4:  [1, 'bare soil']
+    5:  [1, 'water']
+    6:  [1, 'coniferous']
+    7:  [1, 'deciduous']
+    8:  [1, 'brushwood']
+    9:  [1, 'vineyard']
+    10: [1, 'herbaceous vegetation']
+    11: [1, 'agricultural land']
+    12: [1, 'plowed land']
+    13: [1, 'swimming_pool']
+    14: [1, 'snow']
+    15: [0, 'clear cut']
+    16: [0, 'mixed']
+    17: [0, 'ligneous']
+    18: [1, 'greenhouse']
+    19: [0, 'other']
