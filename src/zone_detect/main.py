@@ -312,7 +312,7 @@ def run_pipeline(
             stitching_methods = config["strategies"]["stitching"]["method"]
         else:  # default stitching : exact clipping
             margin_list = [config["margin"]]
-            stitching_methods = ["exact_clipping"]
+            stitching_methods = ["exact-clipping"]
 
         # basically a grid comparison
         # could probably benefit from some optimization but ehhh
@@ -452,7 +452,7 @@ def run_pipeline(
                     prediction,
                     index,
                     out,
-                    "exact_clipping",
+                    "exact-clipping",
                     stride,
                 )
                 # write

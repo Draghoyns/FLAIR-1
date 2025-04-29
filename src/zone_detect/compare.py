@@ -70,7 +70,7 @@ def stitching(
         sliced_dataframe.at[index[0], "top"],
     ]  # geo
 
-    if method == "exact_clipping" or output_type == "class_prob":
+    if method == "exact-clipping" or output_type == "class_prob":
         # default
         # removing margins
         prediction = prediction[
