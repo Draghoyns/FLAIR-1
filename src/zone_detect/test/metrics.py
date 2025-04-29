@@ -8,7 +8,10 @@ from pathlib import Path
 import rasterio
 from rasterio.windows import Window
 from sklearn.metrics import confusion_matrix
+
 from src.zone_detect.main import run_from_config
+from src.zone_detect.test.tiles import get_stride
+from src.zone_detect.utils import valid_truth
 from src.zone_detect.test.pixel_operation import slice_pixels
 
 
@@ -45,17 +48,6 @@ def class_fscore(npcm):
     fscore = 2 * (precision * recall) / (precision + recall)
     fscore[np.isnan(fscore)] = 0
     return fscore, np.mean(fscore)
-
-
-def valid_truth(config: dict) -> Path:
-    truth_path = config["truth_path"]
-    # verify coherence with input path
-    sanity_check = config["input_img_path"].split("/")[-3:-1]  # zone
-    if truth_path.split("/")[-3:-1] != sanity_check:
-        raise ValueError(
-            f"Ground truth path {truth_path} does not match input path {config['input_img_path']}"
-        )
-    return Path(truth_path)
 
 
 # __________PIPELINE__________#
@@ -288,22 +280,12 @@ def compute_metrics_patch(
     print(f"Metrics saved to {out}")
 
 
-def error_rate_patch(config: dict, out_path: str, pred_filename: str = "") -> None:
+# not incorporated in the pipeline, but maybe as option ?
+def error_rate_patch(config: dict, out_dir: str, pred_filename: str = "") -> None:
     # output file
-    assert out_path is not None, "Please provide an output path for the metrics"
+    assert out_dir is not None, "Please provide an output path for the metrics"
 
     truth_path = valid_truth(config)
-    out_array = np.zeros(
-        (config["img_pixels_detection"], config["img_pixels_detection"])
-    )
-
-    # slice into patches
-    patches = slice_pixels(
-        config["img_pixels_detection"],
-        config["img_pixels_detection"],
-        config["margin"],
-        config["stride"],
-    )
 
     # prediction path
     pred_folder = Path(config["output_path"])
@@ -314,20 +296,35 @@ def error_rate_patch(config: dict, out_path: str, pred_filename: str = "") -> No
         raise ValueError(f"No prediction file found in {pred_folder}")
 
     # load images in arrays
-    target = np.array(Image.open(truth_path))
-    pred = np.array(
-        Image.open(pred_path).convert("L")
-    )  # convert to grayscale because we have 2 bands
+    # PIL struggles (multi band, 16 bit, float32)
+    with rasterio.open(truth_path) as src:
+        target = src.read(1) - 1  # -1 to match the prediction
+    with rasterio.open(pred_path) as src:
+        pred = src.read(1)
 
+    # slice into patches
+    img_size = target.shape[0], target.shape[1]
+    patches = slice_pixels(
+        img_size,
+        config["img_pixels_detection"],
+        config["margin"],
+        get_stride(config)[0],
+    )
+    effective_patch_size = config["img_pixels_detection"] - 2 * config["margin"]
+    out_array = np.zeros(
+        (effective_patch_size, effective_patch_size),
+    )
     # iterate over the patches and access images using patches indices ?
     for patch in patches:
-        left, bottom, right, top = patch
+        bottom, top, left, right = patch
 
         target_patch = target[bottom:top, left:right]
         pred_patch = pred[bottom:top, left:right]
 
         # compute the error rate
-        # for each pixel, increment if ont equal
+        # for each pixel, increment if not equal
+        # hard error rate
+        # replace / evaluate soft confidence
         out_array += np.where(target_patch != pred_patch, 1, 0)
 
     out_array = out_array / len(patches)
@@ -336,10 +333,18 @@ def error_rate_patch(config: dict, out_path: str, pred_filename: str = "") -> No
 
     # useful info : method used, error rate
 
-    method = pred_filename.split("ARGMAX-IRC-S_")[1]
+    method = str(pred_path).split("ARGMAX-IRC-S_")[-1].split(".tif")[0]
 
-    plt.imshow(out_array, cmap="hot", interpolation="nearest")
+    out_path = Path(out_dir)
+    out_path.mkdir(parents=True, exist_ok=True)
+    out_path = out_path / f"error_rate_{method}_{datetime.datetime.now()}.png"
+
+    # save the error rate as a png
+    plt.figure(figsize=(10, 10))
+    plt.axis("off")
+    plt.imshow(out_array, cmap="hot", interpolation="nearest", vmin=0.025, vmax=0.25)
     plt.colorbar()
-    plt.title("Error Rate for method : " + method)
-    # plt.savefig( out_path + "/error_rate_" + method + "_" + str(datetime.datetime.now()) + ".png")
-    plt.show()
+    plt.title("Error Rate for method : \n" + method)
+    plt.savefig(str(out_path))
+    plt.close()
+    print(f"Error rate saved to {out_path}")

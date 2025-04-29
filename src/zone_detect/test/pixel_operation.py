@@ -4,6 +4,10 @@ def slice_pixels(
     margin: int,
     stride: int,
 ) -> list[tuple[int, int, int, int]]:
+    """
+    Generate patches for a given image size.
+    The patches are the small boxes where the margins were removed.
+    They will be added for inference inside the slice_geo function."""
 
     def _add_patch_if_valid(patches, x_min, y_min):
         x_max = x_min + patch_size
@@ -14,9 +18,6 @@ def slice_pixels(
 
     patches = set()
     x_size, y_size = img_size
-
-    # we want the patches that will be put into the GeoDataFrame (where we took out the margin)
-    # the margin will be added for the geometry inside the slice_geo
 
     patch_size = patch_size - 2 * margin
 

@@ -51,7 +51,7 @@ def stitching(
     config: dict,
     sliced_dataframe: gpd.GeoDataFrame,
     prediction: np.ndarray,
-    index: np.ndarray,  # really though ?
+    index: np.ndarray,
     out: DatasetWriter,
     method: str,
     stride: int,
