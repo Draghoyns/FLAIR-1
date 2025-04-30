@@ -1,4 +1,3 @@
-from matplotlib import pyplot as plt
 import numpy as np
 
 
@@ -44,7 +43,8 @@ def patch_overlap(
     query_bounds: list[int],
     stride: int,
 ) -> np.ndarray:
-    # works in pixels
+    """Works in pixels"""
+
     x_min, x_max, y_min, y_max = query_bounds
     overlap_map = np.zeros((y_max - y_min, x_max - x_min), dtype=np.uint8)
 

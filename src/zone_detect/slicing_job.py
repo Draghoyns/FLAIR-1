@@ -26,10 +26,8 @@ def slice_extent(
     stride: int,
 ) -> tuple[gpd.GeoDataFrame, dict, tuple[float, float], list[int]]:
 
-    img_width, img_height = rasterio.open(in_img).read(1).shape
-    patches = slice_pixels((img_width, img_height), patch_size, margin, stride)
-
     with rasterio.open(in_img) as src:
+        img_width, img_height = src.read(1).shape
         profile = src.profile
         left_overall, bottom_overall, right_overall, top_overall = src.bounds
         resolution = abs(round(src.res[0], 5)), abs(round(src.res[1], 5))
@@ -135,6 +133,7 @@ def slice_extent_separate(
     write_dataframe: bool,
     stride: int,
 ) -> tuple[gpd.GeoDataFrame, dict, tuple[float, float], list[int]]:
+    """It sucks because there is a slight shift of pixel, making the metriucs evaluation wrong"""
 
     img_size = rasterio.open(in_img).read(1).shape[::-1]  # (width, height)
     patches = slice_pixels(img_size, patch_size, margin, stride)

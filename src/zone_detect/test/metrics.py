@@ -9,7 +9,7 @@ import rasterio
 from rasterio.windows import Window
 from sklearn.metrics import confusion_matrix
 
-from src.zone_detect.main import run_from_config
+# from src.zone_detect.main import run_from_config
 from src.zone_detect.test.tiles import get_stride
 from src.zone_detect.utils import valid_truth
 from src.zone_detect.test.pixel_operation import slice_pixels
@@ -212,15 +212,16 @@ def batch_metrics_pipeline(
 
 
 def compute_metrics_patch(
-    pred_patch: np.ndarray, window: Window, config: dict, out_json: str
+    pred_patch: np.ndarray, window: Window, config: dict, method: str, out_json: str
 ) -> None:
     """
     Patch metrics can be computed before the stitching ,
     or once the whole image is built.
+    Average etrics are not exactly relevant because of the classes absent from a patch.
     Args:
         pred_patch (np.ndarray): Predicted patch.
         window (Window): Window object for the patch.
-        config (dict): Configuration, in whichthe parameters for the inference are specified
+        config (dict): Configuration, in which the parameters for the inference are specified
         out_json (str): Path to the output JSON file for metrics. If the file exists, it will be overwritten.
             You better put in the name if it's raw (before stitching) or after.
     """
@@ -230,13 +231,13 @@ def compute_metrics_patch(
 
     with rasterio.open(truth_path) as src:
         # only supports argmax for now
-        target = src.read(1, window=window)
+        target = src.read(1, window=window) - 1
 
     #### compute metrics
     # confusion matrix
     confmat = confusion_matrix(
         target.flatten(),
-        pred_patch.flatten(),
+        pred_patch[0].flatten(),
         labels=list(range(int(len(config["classes"])))) + [255],
     )
     #### CLEAN REGARDING WEIGHTS FOR METRICS CALC :
@@ -247,13 +248,15 @@ def compute_metrics_patch(
         confmat_cleaned, unused_classes, axis=1
     )  # remove columns
 
-    per_c_ious, avg_ious = class_IoU(confmat_cleaned)
-    ovr_acc = overall_accuracy(confmat_cleaned)
-    per_c_fscore, avg_fscore = class_fscore(confmat_cleaned)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        # nans are handled dont worry
+        per_c_ious, avg_ious = class_IoU(confmat_cleaned)
+        ovr_acc = overall_accuracy(confmat_cleaned)
+        per_c_fscore, avg_fscore = class_fscore(confmat_cleaned)
 
     # save metrics to a json file : raw or post-stitching
     out = Path(out_json).with_suffix(".json")
-    key = (window.col_off, window.row_off)
+    key = f"{method}_{window.col_off}_{window.row_off}"
     metrics = {
         key: {
             "Avg_metrics_name": [
@@ -277,7 +280,6 @@ def compute_metrics_patch(
         json.dump(metrics, f)
         f.write("\n")
         # add a new line for each entry
-    print(f"Metrics saved to {out}")
 
 
 # not incorporated in the pipeline, but maybe as option ?

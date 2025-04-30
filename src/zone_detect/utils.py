@@ -99,3 +99,11 @@ def valid_truth(config: dict) -> Path:
             f"Ground truth path {truth_path} does not match input path {config['input_img_path']}"
         )
     return Path(truth_path)
+
+
+#### ROUNDING AND ALIGNING ####
+def truncate(value: float, decimals: int) -> float:
+    """Truncate a float to a given number of decimal places"""
+    factor = 10**decimals
+    rounded = round(value, 2) * factor
+    return rounded / factor

@@ -13,10 +13,11 @@ from pytorch_lightning.utilities.rank_zero import rank_zero_only  # type: ignore
 
 from src.zone_detect.model import load_model
 from src.zone_detect.dataset import Sliced_Dataset
+from src.zone_detect.test.metrics import compute_metrics_patch
 from src.zone_detect.test.tiles import get_stride
 from src.zone_detect.compare import inference, stitching
 
-from utils import setup_device, setup_out_path, setup, setup_indiv_path
+from src.zone_detect.utils import setup_device, setup_out_path, setup, setup_indiv_path
 
 
 warnings.simplefilter(action="ignore", category=FutureWarning)
@@ -47,7 +48,10 @@ class Logger(object):
 
 # we're not handling multiple inputs yet
 def conf_log(
-    config: dict, resolution: tuple[float, float], img_size: list[int]
+    config: dict,
+    resolution: tuple[float, float],
+    img_size: list[int],
+    compare_mode: bool,
 ) -> None:
     # Determine model template info based on provider
     provider = config["model_framework"]["model_provider"]
@@ -61,6 +65,12 @@ def conf_log(
         model_template = provider  # fallback if unknown
 
     compare_handling = "strategies" in config
+
+    compare_param = f"""
+    |- overlapping strategy: {"handled" if compare_handling  else "exact"}
+    |- tiling comparison: {"yes" if (compare_handling and config['strategies']['tiling']['enabled']) else "no"}
+    |- stitching comparison: {"no" if not compare_handling else config['strategies']['stitching']['method']}
+    |- padding: {"not handled" if not compare_handling else config["strategies"]['padding_overall']} \n """
 
     print(
         f"""
@@ -80,19 +90,17 @@ def conf_log(
     |- model template: {model_template}
     |- device: {"cuda" if config['use_gpu'] else "cpu"}
     |- batch size: {config['batch_size']}
-    
-    |- overlapping strategy: {"handled" if compare_handling  else "exact"}
-    |- tiling comparison: {"yes" if (compare_handling and config['strategies']['tiling']['enabled']) else "no"}
-    |- stitching comparison: {"no" if not compare_handling else config['strategies']['stitching']['method']}
-    |- padding: {"not handled" if not compare_handling else config["strategies"]['padding_overall']} \n
+    {compare_param if compare_mode else ""}
     """
     )
 
 
 # __________Prepare objects___________#
-def prepare_tiles(config: dict, stride: int) -> tuple[GeoDataFrame, dict, tuple]:
+def prepare_tiles(
+    config: dict, stride: int, compare: bool
+) -> tuple[GeoDataFrame, dict, tuple]:
     ## slicing extent for overlapping detection
-    sliced_dataframe, profile, resolution, img_size = slice_extent_separate(
+    sliced_dataframe, profile, resolution, img_size = slice_extent(
         in_img=config["input_img_path"],
         patch_size=config["img_pixels_detection"],
         margin=config["margin"],
@@ -102,7 +110,7 @@ def prepare_tiles(config: dict, stride: int) -> tuple[GeoDataFrame, dict, tuple]
         stride=stride,
     )
     ## log
-    conf_log(config, resolution, img_size)
+    conf_log(config, resolution, img_size, compare)
     print(f"""    [x] sliced input raster to {len(sliced_dataframe)} squares...""")
 
     return sliced_dataframe, profile, resolution
@@ -232,19 +240,30 @@ def run_pipeline(
 
         # basically a grid comparison
         # could probably benefit from some optimization but ehhh
+
+        # common to a zone (= one tif image)
+        metrics_json = config["output_path"] + "/metrics_per-patch_final.json"
+
         print(f"""    [ ] starting comparison...\n""")
         for padding in padding_list:
             for img_pixels_detection in tile_size_list:
                 config["img_pixels_detection"] = img_pixels_detection
                 for margin in margin_list:
                     config["margin"] = margin
+                    # skip if parameters are not valid
+                    if img_pixels_detection <= 2 * margin:
+                        print(
+                            f"""    [x] skipping {img_pixels_detection} pixels detection size with {margin} margin..."""
+                        )
+                        continue
+
                     stride_list = get_stride(config)
                     for stride in stride_list:
-                        for method in stitching_methods:
+                        for stitch in stitching_methods:
 
                             # slicing
                             sliced_dataframe, profile, resolution = prepare_tiles(
-                                config, stride=stride
+                                config, stride, compare
                             )
 
                             # get dataset
@@ -257,7 +276,8 @@ def run_pipeline(
                                 norma_dict=norma_task,
                             )
 
-                            identifier = f"_size={img_pixels_detection}_stride={stride}_margin={margin}_padding={padding}_stitching={method}"
+                            method = f"size={img_pixels_detection}_stride={stride}_margin={margin}_padding={padding}_stitching={stitch}"
+                            identifier = "_" + method
                             config, path_out = setup_indiv_path(config, identifier)
 
                             # get Dataloader
@@ -295,8 +315,9 @@ def run_pipeline(
                                         prediction,
                                         index,
                                         out,
-                                        method,
+                                        stitch,
                                         stride,
+                                        resolution,
                                     )
                                     # write
                                     if output_type == "argmax":
@@ -310,9 +331,16 @@ def run_pipeline(
                                             window=window,
                                         )
 
+                                    compute_metrics_patch(
+                                        prediction, window, config, method, metrics_json
+                                    )
+
                             out.close()
                             print(
                                 f"""    [X] done writing to {path_out.split('/')[-1]} raster file.\n"""
+                            )
+                            print(
+                                f"""    [X] done writing metrics to {metrics_json.split('/')[-1]} file.\n"""
                             )
 
     else:
@@ -320,7 +348,7 @@ def run_pipeline(
         # default configuration : exact clipping and default sized tiling
         # slicing
         stride = get_stride(config)[0]
-        sliced_dataframe, profile, resolution = prepare_tiles(config, stride)
+        sliced_dataframe, profile, resolution = prepare_tiles(config, stride, compare)
 
         # get dataset
         dataset = Sliced_Dataset(
@@ -370,6 +398,7 @@ def run_pipeline(
                     out,
                     "exact-clipping",
                     stride,
+                    resolution,
                 )
                 # write
                 if output_type == "argmax":

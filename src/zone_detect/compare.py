@@ -1,5 +1,6 @@
 import numpy as np
 import geopandas as gpd
+
 from src.zone_detect.dataset import convert
 from src.zone_detect.slicing_job import create_polygon_from_bounds
 
@@ -9,6 +10,7 @@ from rasterio.windows import Window
 from rasterio.io import DatasetWriter
 
 from src.zone_detect.test.tiles import patch_overlap, patch_weights, total_weights
+from src.zone_detect.utils import truncate
 
 
 def inference(
@@ -53,8 +55,9 @@ def stitching(
     prediction: np.ndarray,
     index: np.ndarray,
     out: DatasetWriter,
-    method: str,
+    stitch: str,
     stride: int,
+    resolution: tuple[float, float],
 ) -> tuple[np.ndarray, Window]:
     """Output of this is ready to be written"""
 
@@ -70,7 +73,10 @@ def stitching(
         sliced_dataframe.at[index[0], "top"],
     ]  # geo
 
-    if method == "exact-clipping" or output_type == "class_prob":
+    # align to resolution
+    sliced_box = [round(coord, 3) for coord in sliced_box]
+
+    if stitch == "exact-clipping" or output_type == "class_prob":
         # default
         # removing margins
         prediction = prediction[
@@ -114,12 +120,13 @@ def stitching(
 
         # help averaging
         size = out.profile["width"], out.profile["height"]
+        # yes be careful, sliced_box should be in pixel coord for this function
         overlapping = patch_overlap(size, img_pixels_detection, sliced_box, stride)
 
         # note : be really careful where you have geo coord and pixel coord
         # TODO : stay at pixel level the longest possible
 
-        if method == "average":  # only for class_prob
+        if stitch == "average":  # only for class_prob
 
             prediction = prediction / overlapping
             prediction = prediction + possible_overlap
@@ -127,7 +134,7 @@ def stitching(
             prediction = convert(prediction, output_type)
 
             pass
-        elif method == "average_weights":
+        elif stitch == "average_weights":
             # get weights
             weights = patch_weights(img_pixels_detection)
             # get distance map
@@ -137,7 +144,7 @@ def stitching(
 
             prediction = convert(prediction, output_type)
 
-        elif method == "max":
+        elif stitch == "max":
             prediction = convert(prediction, output_type)
 
             better_past = possible_overlap[0] > prediction[0]
