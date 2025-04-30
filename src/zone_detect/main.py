@@ -1,23 +1,30 @@
+import json
+from pathlib import Path
 import os, sys
 import datetime
 import warnings
-
-from geopandas import GeoDataFrame
-from src.zone_detect.slicing_job import slice_extent, slice_extent_separate
-import torch
-from tqdm import tqdm
 import rasterio
 import argparse
+from tqdm import tqdm
+
+from geopandas import GeoDataFrame
+import torch
 from torch.utils.data import DataLoader
 from pytorch_lightning.utilities.rank_zero import rank_zero_only  # type: ignore
 
+from src.zone_detect.slicing_job import slice_extent, slice_extent_separate
 from src.zone_detect.model import load_model
 from src.zone_detect.dataset import Sliced_Dataset
-from src.zone_detect.test.metrics import compute_metrics_patch
+from src.zone_detect.test.metrics import batch_metrics, compute_metrics_patch
 from src.zone_detect.test.tiles import get_stride
 from src.zone_detect.compare import inference, stitching
 
-from src.zone_detect.utils import setup_device, setup_out_path, setup, setup_indiv_path
+from src.zone_detect.utils import (
+    setup_device,
+    setup_out_path,
+    setup,
+    setup_indiv_path,
+)
 
 
 warnings.simplefilter(action="ignore", category=FutureWarning)
@@ -162,23 +169,12 @@ def prepare_output_raster(
     return out
 
 
-# __________Main function___________#
-def main():
-
-    # reading yaml
-    args = argParser.parse_args()
-
-    # setting up device and log
-    config, device, use_gpu, compare = setup(args)
-
-    run_pipeline(config, device, use_gpu, compare)
-
-
-def run_from_config(config: dict) -> None:
+# _________PIPELINES__________#
+def run_from_config(config: dict, compare: bool) -> None:
     """Run the pipeline from a config file"""
     # setting up device and log
     device, use_gpu = setup_device(config)
-    config, compare = setup_out_path(config, None)
+    config, compare = setup_out_path(config, compare)
 
     run_pipeline(config, device, use_gpu, compare)
 
@@ -418,6 +414,70 @@ def run_pipeline(
     dataset.close_raster()
 
     sys.stdout = sys.__stdout__
+
+
+def batch_metrics_pipeline(
+    config: dict, compare: bool, gt_dir: str, out_json: str
+) -> None:
+    """
+    Compute metrics for a batch of images.
+    Args:
+        gt_dir (str): Path to the ground truth directory.
+        config (dict): Configuration, in which the parameters for the inference are specified
+        out_Json (str): Path to the output JSON file for metrics. If the file exists, it will be overwritten.
+    """
+
+    # output file
+    assert out_json is not None, "Please provide an output path for the metrics"
+
+    # __________INFERENCE__________#
+    inputs_folder = Path(config["input_path"])
+
+    for zone in sorted(inputs_folder.iterdir()):
+
+        # find an input file image
+        if not zone.is_dir():
+            continue
+        irc_path = next(zone.glob("*IRC.tif"), None)
+        if irc_path is None:
+            continue
+
+        config["input_img_path"] = str(irc_path)
+
+        # Inference and saving the predictions
+        run_from_config(config, compare)
+
+    # we have all the predictions in the output folder
+
+    out = Path(out_json).with_suffix(".json")
+
+    metrics_file = batch_metrics(config, gt_dir)
+
+    # save the metrics to a json file
+    json.dump(
+        metrics_file,
+        open(out, "w"),
+    )
+    print(f"Metrics saved to {out}")
+
+
+# __________Main function___________#
+def main():
+
+    # reading yaml
+    args = argParser.parse_args()
+
+    # setting up device and log
+    config, device, use_gpu, compare = setup(args)
+
+    if False:
+        run_pipeline(config, device, use_gpu, compare)
+    else:
+        # batch mode
+        gt_dir = Path(config["truth_path"]).parent.parent
+        metrics_out = config["metrics_out"]
+
+        batch_metrics_pipeline(config, compare, str(gt_dir), metrics_out)
 
 
 if __name__ == "__main__":

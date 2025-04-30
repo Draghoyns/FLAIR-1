@@ -4,8 +4,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import rasterio
 
+from src.zone_detect.test.metrics import valid_truth
 from src.zone_detect.test.tiles import get_stride
-from src.zone_detect.utils import read_config, valid_truth
+from src.zone_detect.utils import read_config
 from src.zone_detect.test.pixel_operation import slice_pixels
 
 
