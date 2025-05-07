@@ -1,11 +1,10 @@
-import json
 from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import rasterio
 
-from src.zone_detect.test.metrics import batch_metrics
-from src.zone_detect.utils import read_config, setup_device, setup_out_path
+from src.zone_detect.test.metrics import *
+from src.zone_detect.utils import read_config
 
 
 def geogr_patches(
@@ -161,20 +160,17 @@ if __name__ == "__main__":
     for pred in pred_path.iterdir():
         if not pred.is_file() or not pred.name.endswith(".tif"):
             continue
-        list_preds.append(pred)"""
+        list_preds.append(pred)
+"""
 
-    device, use_gpu = setup_device(config)
-    config, compare = setup_out_path(config, False)
-    gt_dir = Path(config["truth_path"]).parent.parent
-    metrics_out = config["metrics_out"]
+    # metrics analysis
 
-    out = Path(metrics_out).with_suffix(".json")
+    metrics_path = config["metrics_out"]
 
-    metrics_file = batch_metrics(config, str(gt_dir))
+    metrics_data = load_metrics_json(metrics_path)
+    df = flatten_metrics(metrics_data)
 
-    # save the metrics to a json file
-    json.dump(
-        metrics_file,
-        open(out, "w"),
-    )
-    print(f"Metrics saved to {out}")
+    param = "patch size"
+    metrics = ["mIoU", "Overall Accuracy", "Fscore"]
+
+    plot_metrics(analyze_param(df, param, metrics[0]), param, metrics[0])

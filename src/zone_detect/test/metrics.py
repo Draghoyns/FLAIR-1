@@ -249,15 +249,12 @@ def batch_metrics(config: dict, gt_dir: str) -> list:
                 padding,
                 stitching,
             ],
-            "Avg_metrics_name": [
-                "mIoU",
-                "Overall Accuracy",
-                "Fscore",
-            ],
+            "Avg_metrics_name": ["mIoU", "Overall Accuracy", "Fscore", "Time"],
             "Avg_metrics": [
                 avg_ious,
                 ovr_acc,
                 avg_fscore,
+                avg_time,
             ],
             "classes": list(
                 np.array([config["classes"][i][1] for i in config["classes"]])
@@ -338,3 +335,81 @@ def error_rate_patch(config: dict, out_dir: str, pred_filename: str = "") -> Non
     plt.savefig(str(out_path))
     plt.close()
     print(f"Error rate saved to {out_path}")
+
+
+#### ANALYSIS ####
+def load_metrics_json(json_path: str) -> dict:
+    """
+    Load the metrics from a json file.
+    Args:
+        json_path (str): Path to the json file.
+    Returns:
+        dict: Dictionary containing the metrics.
+    """
+    with open(json_path, "r") as f:
+        data = json.load(f)
+    return data
+
+
+def flatten_metrics(metrics: dict) -> pd.DataFrame:
+    """
+    Flatten the metrics dictionary into a pandas DataFrame.
+    Args:
+        metrics (dict): Dictionary containing the metrics.
+    Returns:
+        pd.DataFrame: DataFrame containing the metrics.
+    """
+    flat_metrics = []
+    for key, value in metrics.items():
+        flat_metrics.append(
+            {
+                "key": key,
+                **{
+                    k: v
+                    for k, v in value.items()
+                    if k not in ["Avg_metrics_name", "Avg_metrics"]
+                },
+            }
+        )
+    return pd.DataFrame(flat_metrics)
+
+
+def analyze_param(df: pd.DataFrame, param: str, metric: str) -> pd.DataFrame:
+    """
+    Analyze the metrics for a given parameter.
+    Args:
+        df (pd.DataFrame): DataFrame containing the metrics.
+        param (str): Parameter to analyze.
+        metric (str): Metric to analyze.
+    Returns:
+        pd.DataFrame: DataFrame containing the analyzed metrics.
+    """
+    # filter the dataframe for the given parameter
+    df = df[df["key"].str.contains(param)]
+    # extract the parameter values
+    df[param] = df["key"].str.extract(f"{param}=(\d+)")
+    # convert to numeric
+    df[param] = pd.to_numeric(df[param])
+    # group by parameter and compute the mean of the metric
+    df = df.groupby(param).agg({metric: "mean"}).reset_index()
+    return df
+
+
+def plot_metrics(df: pd.DataFrame, param: str, metric: str) -> None:
+    """
+    Plot the metrics for a given parameter.
+    Args:
+        df (pd.DataFrame): DataFrame containing the metrics.
+        param (str): Parameter to plot.
+        metric (str): Metric to plot.
+    """
+    plt.figure(figsize=(10, 5))
+    plt.plot(df[param], df[metric], marker="o")
+    plt.xlabel(param)
+    plt.ylabel(metric)
+    plt.title(f"{metric} vs {param}")
+    plt.grid()
+    plt.show()
+    plt.savefig(f"{param}_{metric}.png")
+    plt.close()
+    print(f"Plot saved to {param}_{metric}.png")

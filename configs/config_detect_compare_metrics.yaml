@@ -1,0 +1,100 @@
+# THIS IS NOT FOR CUSTOM STRATEGIES FOR ONE INFERENCE
+
+output_path:
+  /media/DATA/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out20250506
+output_name: 037_2021_UU_S1_4_ARGMAX-IRC-S # stem
+
+input_img_path: /media/DATA/INFERENCE_HS/DATA/dataset_zone_last/ortho/D037_2021/UU_S1_4/037_2021_UU_S1_4_IRC.tif
+input_path : /media/DATA/INFERENCE_HS/DATA/dataset_zone_last/ortho/D037_2021 # optional - directory if multiple inputs
+
+channels: [1, 2, 3]
+
+truth_path : /media/DATA/INFERENCE_HS/DATA/dataset_zone_last/labels_raster/FLAIR_19/D037_2021/UU_S1_4/D037_2021-UU_S1_4-MSK_FLAIR19-LABEL.tif
+metrics_out: /media/DATA/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out20250506/metrics.json # JSON; None = new file
+
+img_pixels_detection: 512 # best for swin
+margin: 64 # for clipping
+output_type: "argmax" # prediction type
+n_classes: 19
+
+#### MODEL
+model_weights: /media/DATA/INFERENCE_HS/MODELS_IA/FLAIR1/swin-upernet-small_IRV_SET1/checkpoints/ckpt-epoch=84-val_loss=0.37_00_HF_SwinUpernet_Small_IR-R-G_set1.ckpt
+model_framework: 
+    model_provider: HuggingFace
+    
+    HuggingFace:
+        org_model: openmmlab/upernet-swin-small
+    SegmentationModelsPytorch:
+        encoder_decoder: resnet34_unet
+
+model_name: upernet-swin-small
+encoder_name: swin-small
+
+batch_size: 1 # for DataLoader
+use_gpu: true
+num_worker: 8
+
+write_dataframe: False
+
+#### NORMALIZATION
+norma_task:
+- norm_type: custom
+  norm_means: [106.38, 105.08, 110.87]
+  norm_stds: [39.69, 52.17, 45.38]
+
+#### COMPARISON PARAMETERS
+  # only if --compare=true when calling flair-detect
+
+# used to ensure coherence between tiling and stitching parameters
+overlap_strat : False # for exact clipping, True if overlap is handled
+
+strategies:
+  tiling: # tiling handles different sizes 
+    enabled: True
+    size_range : [128, 256, 512, 1024, 2048] # replaces img_pixels_detection
+    stride_range : [0.75] # percentage of the tile size - should be related to margin if stitching requires clipping
+    #shapes : [] # square by default
+
+  stitching : # overlap is determined by tiling
+    enabled : False
+    method: clipping
+    methods : [average, average_weights max, exact_clipping] # max = max confidence
+    margin : [0.125] # percentage of the tile size
+
+  padding_overall : [] # [~, zero, mirror] - for the outer edges of the input - TBC
+
+#__________METRICS___________#
+
+metrics: # TBC
+  # all of them are enabled by default in the code for now
+  - name : o_accuracy
+    enabled : True
+  - name : f1
+    enabled : True
+  - name : miou
+    enabled : True
+  - name : time
+    enabled : True
+
+
+#### CLASSES
+classes: # k = value in MSK : v = [weight, name]
+    1:  [1, 'building']
+    2:  [1, 'pervious surface']
+    3:  [1, 'impervious surface']
+    4:  [1, 'bare soil']
+    5:  [1, 'water']
+    6:  [1, 'coniferous']
+    7:  [1, 'deciduous']
+    8:  [1, 'brushwood']
+    9:  [1, 'vineyard']
+    10: [1, 'herbaceous vegetation']
+    11: [1, 'agricultural land']
+    12: [1, 'plowed land']
+    13: [1, 'swimming_pool']
+    14: [1, 'snow']
+    15: [0, 'clear cut']
+    16: [0, 'mixed']
+    17: [0, 'ligneous']
+    18: [1, 'greenhouse']
+    19: [0, 'other']

@@ -20,6 +20,7 @@ from src.zone_detect.test.tiles import get_stride
 from src.zone_detect.compare import inference, stitching
 
 from src.zone_detect.utils import (
+    preprocess_config,
     setup_device,
     setup_out_path,
     setup,
@@ -424,16 +425,15 @@ def run_pipeline(
     sys.stdout = sys.__stdout__
 
 
-def batch_metrics_pipeline(
-    config: dict, compare: bool, gt_dpt: str, out_json: str
-) -> None:
+def batch_metrics_pipeline(config: dict, compare: bool, gt_dpt: str) -> None:
     """
     Compute metrics for a batch of images.
     Args:
         gt_dir (str): Path to the ground truth directory.
         config (dict): Configuration, in which the parameters for the inference are specified
-        out_json (str): Path to the output JSON file for metrics. If the file exists, it will be overwritten.
     """
+
+    out_json = Path(config["metrics_out"])
 
     # output file
     assert out_json is not None, "Please provide an output path for the metrics"
@@ -463,7 +463,7 @@ def batch_metrics_pipeline(
 
     # we have all the predictions in the output folder
 
-    out = Path(out_json).with_suffix(".json")
+    out = out_json.with_suffix(".json")
 
     metrics_file = batch_metrics(config, gt_dpt)
 
@@ -483,15 +483,15 @@ def main():
 
     # setting up device and log
     config, device, use_gpu, compare = setup(args)
+    config = preprocess_config(config, compare)
 
     if False:
         run_pipeline(config, device, use_gpu, compare)
     else:
         # batch mode
         gt_dir = Path(config["truth_path"]).parent.parent
-        metrics_out = config["metrics_out"]
 
-        batch_metrics_pipeline(config, compare, str(gt_dir), metrics_out)
+        batch_metrics_pipeline(config, compare, str(gt_dir))
 
 
 if __name__ == "__main__":

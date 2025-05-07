@@ -11,6 +11,79 @@ def read_config(file_path: str) -> dict:
         return yaml.safe_load(f)
 
 
+def preprocess_config(config: dict, compare: bool) -> dict:
+    """Clean the config file by formatting correctly
+    and raising obvious errors before any run."""
+
+    # paths
+    # check existence ?
+    config["input_img_path"] = Path(config["input_img_path"]).with_suffix(".tif")
+    config["truth_path"] = Path(config["truth_path"]).with_suffix(".tif")
+    config["metrics_out"] = Path(config["metrics_out"]).with_suffix(".json")
+
+    # channels
+    assert isinstance(config["channels"], list) and all(
+        isinstance(c, int) for c in config["channels"]
+    ), "Channels should be a list of integers"
+
+    # inference param
+    assert (
+        type(config["img_pixels_detection"]) == int
+    ), "img_pixels_detection should be an integer"
+    assert (
+        type(config["margin"]) == int
+        and 2 * config["margin"] < config["img_pixels_detection"]
+    ), "Margin should be an integer and less than half of img_pixels_detection"
+    assert config["output_type"] in [
+        "argmax",
+        "class_prob",
+    ], "Output type should be either argmax or class_prob"
+    assert type(config["n_classes"]) == int, "n_classes should be an integer"
+
+    # model
+    if os.path.splitext(config["model_weights"])[1] not in [".pth", ".ckpt"]:
+        raise ValueError(
+            "Model weights should be a .pth or .ckpt file. "
+            f"Got {os.path.splitext(config['model_weights'])[1]}"
+        )
+
+    if compare:
+
+        config["strategies"]["tiling"]["size_range"] = check_list_type(
+            config["strategies"]["tiling"]["size_range"], int
+        )
+        config["strategies"]["tiling"]["stride_range"] = check_list_type(
+            config["strategies"]["tiling"]["stride_range"], float
+        )
+        assert all(
+            i >= 0 and i <= 1 for i in config["strategies"]["tiling"]["stride_range"]
+        ), "Stride should be a percentage"
+        config["strategies"]["stitching"]["methods"] = check_list_type(
+            config["strategies"]["stitching"]["methods"], str
+        )
+        config["strategies"]["stitching"]["margin"] = check_list_type(
+            config["strategies"]["stitching"]["margin"], float
+        )
+        assert all(
+            i >= 0 and i <= 1 for i in config["strategies"]["stitching"]["margin"]
+        ), "Margin should be a percentage"
+
+    return config
+
+
+def check_list_type(lst: list, expected_type: type) -> list:
+    res = lst
+    if isinstance(lst, expected_type):
+        res = [lst]
+    elif hasattr(lst, "__iter__"):
+        res = [i for i in lst if isinstance(i, expected_type)]
+
+    assert all(
+        isinstance(i, expected_type) for i in res
+    ), f"List should be of type {expected_type}"
+    return res
+
+
 #### SETUP ####
 def setup_out_path(config: dict, compare: bool) -> tuple[dict, bool]:
     """Setup the output directory"""
