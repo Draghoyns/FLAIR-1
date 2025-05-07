@@ -21,7 +21,7 @@ def setup_out_path(config: dict, compare: bool) -> tuple[dict, bool]:
         current_time = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         child_dir = os.path.join(config["output_path"], current_time)
         os.makedirs(child_dir, exist_ok=True)
-        config["output_path"] = child_dir
+        config["local_out"] = child_dir
 
     return config, compare
 
@@ -69,7 +69,7 @@ def setup_indiv_path(config: dict, identifier: str = "") -> tuple[dict, str]:
     try:
         # Path(config['output_path']).mkdir(parents=True, exist_ok=True)
         base_name = out_name
-        path_out = os.path.join(config["output_path"], base_name)
+        path_out = os.path.join(config["local_out"], base_name)
 
         # Do not overwrite if file exists, add counter
         filename, ext = os.path.splitext(base_name)
@@ -77,7 +77,7 @@ def setup_indiv_path(config: dict, identifier: str = "") -> tuple[dict, str]:
 
         while os.path.exists(path_out):
             new_name = f"{filename}_{counter}{ext}"
-            path_out = os.path.join(config["output_path"], new_name)
+            path_out = os.path.join(config["local_out"], new_name)
             counter += 1
         # config['output_name'] = os.path.splitext(os.path.basename(path_out))[0]
         return config, path_out

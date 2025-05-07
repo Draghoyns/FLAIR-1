@@ -1,7 +1,6 @@
 import datetime
 import json
 from pathlib import Path
-from PIL import Image
 from matplotlib import pyplot as plt
 
 import numpy as np
@@ -9,6 +8,7 @@ import pandas as pd
 import rasterio
 from rasterio.windows import Window
 from sklearn.metrics import confusion_matrix
+from tqdm import tqdm
 
 from src.zone_detect.test.tiles import get_stride
 from src.zone_detect.test.pixel_operation import slice_pixels
@@ -46,26 +46,27 @@ def collect_paths_truth(config: dict, gt_dir: str) -> pd.DataFrame:
     gt_folder = Path(gt_dir)
 
     # get predictions
-    pred_folder = Path(config["output_path"].split("/")[:-2])
-    # after inference, output path is pred_folder/zone_name/timestamp
+    pred_folder = Path(config["output_path"])
+    timed_folders = [p for p in pred_folder.iterdir() if p.is_dir()]
 
     # dataframe with pred path, gt path and method single string
-    for zone in sorted(pred_folder.iterdir()):
-        # find an input file image
-        if not zone.is_dir():
-            continue
-        zone_name = zone.name
+    for timestamp in sorted(timed_folders):
 
-        zone_path = pred_folder / zone_name
-        pred_files = list(zone_path.rglob("*.tif"))
+        pred_files = list(timestamp.rglob("*.tif"))
+
+        # extract region info
+        region_id = str(pred_files[0].name).split("_IRC-ARGMAX-S_")[0]
+        dpt, zone_name = region_id.split("_")[:2], region_id.split("_")[2:]
+        zone_name = "_".join(zone_name)
 
         # corresponding ground truth
+        # we consider gt_folder the dpt folder
         gt_subfolder = gt_folder / zone_name
         gt_path = next(gt_subfolder.glob("*.tif"), None)
 
         for pred_path in pred_files:
-            method_id = Path(pred_path.name.split("ARGMAX-IRC-S_")[1]).stem
-            # zone_name_ARGMAX-IRC-S_size=128_stride=96_margin=32_padding=some-padding_stitching=exact_clipping
+            method_id = Path(pred_path.name.split("IRC-ARGMAX-S_")[1]).stem
+            # zone_name_IRC-ARGMAX-S_size=128_stride=96_margin=32_padding=some-padding_stitching=exact_clipping
             path_collection.append(
                 {
                     "pred_path": str(pred_path),
@@ -186,7 +187,8 @@ def batch_metrics(config: dict, gt_dir: str) -> list:
     grouped = df.groupby("method")
 
     # metrics for each method
-    for method, group in grouped:
+    # TODO : add a progress bar
+    for method, group in tqdm(grouped, desc="Computing metrics"):
 
         pred_paths = group["pred_path"].tolist()
         gt_paths = group["gt_path"].tolist()
@@ -194,10 +196,12 @@ def batch_metrics(config: dict, gt_dir: str) -> list:
         patch_confusion_matrices = []
         for pred_path, gt_path in zip(pred_paths, gt_paths):
             try:
-                target = (
-                    np.array(Image.open(gt_path)) - 1
-                )  # depending on classes starting at 1 or 0
-                preds = np.array(Image.open(pred_path))
+                # loading
+                with rasterio.open(pred_path) as src:
+                    preds = src.read(1)
+                with rasterio.open(gt_path) as src:
+                    target = src.read(1) - 1
+
                 patch_confusion_matrices.append(
                     confusion_matrix(
                         target.flatten(),
@@ -213,9 +217,11 @@ def batch_metrics(config: dict, gt_dir: str) -> list:
         confmat_cleaned = clean_confmat(sum_confmat, config)
 
         # metrics
-        per_c_ious, avg_ious = class_IoU(confmat_cleaned)
-        ovr_acc = overall_accuracy(confmat_cleaned)
-        per_c_fscore, avg_fscore = class_fscore(confmat_cleaned)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            # nans are handled dont worry
+            per_c_ious, avg_ious = class_IoU(confmat_cleaned)
+            ovr_acc = overall_accuracy(confmat_cleaned)
+            per_c_fscore, avg_fscore = class_fscore(confmat_cleaned)
 
         # method parameters
         tile_size, stride, margin, padding, stitching = str(method).split("_")
@@ -316,7 +322,7 @@ def error_rate_patch(config: dict, out_dir: str, pred_filename: str = "") -> Non
 
     # useful info : method used, error rate
 
-    method = str(pred_path).split("ARGMAX-IRC-S_")[-1].split(".tif")[0]
+    method = str(pred_path).split("IRC-ARGMAX-S_")[-1].split(".tif")[0]
 
     out_path = Path(out_dir)
     out_path.mkdir(parents=True, exist_ok=True)

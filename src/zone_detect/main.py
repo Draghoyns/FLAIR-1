@@ -112,7 +112,7 @@ def prepare_tiles(
         patch_size=config["img_pixels_detection"],
         margin=config["margin"],
         output_name=config["output_name"],
-        output_path=config["output_path"],
+        output_path=config["local_out"],
         write_dataframe=config["write_dataframe"],
         stride=stride,
     )
@@ -195,7 +195,7 @@ def run_pipeline(
 
     img_pixels_detection = config["img_pixels_detection"]
     log_filename = os.path.join(
-        config["output_path"],
+        config["local_out"],
         f"{config['output_name']}_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.log",
     )
 
@@ -218,7 +218,7 @@ def run_pipeline(
         # TODO
         padding_list = config["strategies"]["padding_overall"]
         if padding_list == []:
-            padding_list = ["some-padding"]
+            padding_list = ["no-padding"]
 
         # configuration for comparison
 
@@ -238,7 +238,7 @@ def run_pipeline(
         # could probably benefit from some optimization but ehhh
 
         # common to a zone (= one tif image)
-        metrics_json = config["output_path"] + "/metrics_per-patch_final.json"
+        metrics_json = config["local_out"] + "/metrics_per-patch_final.json"
 
         print(f"""    [ ] starting comparison...\n""")
         for padding in padding_list:
@@ -417,32 +417,38 @@ def run_pipeline(
 
 
 def batch_metrics_pipeline(
-    config: dict, compare: bool, gt_dir: str, out_json: str
+    config: dict, compare: bool, gt_dpt: str, out_json: str
 ) -> None:
     """
     Compute metrics for a batch of images.
     Args:
         gt_dir (str): Path to the ground truth directory.
         config (dict): Configuration, in which the parameters for the inference are specified
-        out_Json (str): Path to the output JSON file for metrics. If the file exists, it will be overwritten.
+        out_json (str): Path to the output JSON file for metrics. If the file exists, it will be overwritten.
     """
 
     # output file
     assert out_json is not None, "Please provide an output path for the metrics"
 
     # __________INFERENCE__________#
-    inputs_folder = Path(config["input_path"])
+    inputs_dpt = Path(config["input_path"])
 
-    for zone in sorted(inputs_folder.iterdir()):
+    for full_zone in sorted(inputs_dpt.iterdir()):
 
         # find an input file image
-        if not zone.is_dir():
+        if not full_zone.is_dir():
             continue
-        irc_path = next(zone.glob("*IRC.tif"), None)
+        irc_path = next(full_zone.glob("*IRC.tif"), None)
         if irc_path is None:
             continue
 
+        dpt, zone = str(irc_path).split("/")[-3:-1]
+        gt_path = str(gt_dpt) + "/" + zone + "/"
+        gt_path = next(Path(gt_path).glob("*.tif"), None)
+
         config["input_img_path"] = str(irc_path)
+        config["truth_path"] = str(gt_path)
+        config["output_name"] = str(irc_path).split("/")[-1].split(".")[0] + "-ARGMAX-S"
 
         # Inference and saving the predictions
         run_from_config(config, compare)
@@ -451,7 +457,7 @@ def batch_metrics_pipeline(
 
     out = Path(out_json).with_suffix(".json")
 
-    metrics_file = batch_metrics(config, gt_dir)
+    metrics_file = batch_metrics(config, gt_dpt)
 
     # save the metrics to a json file
     json.dump(
