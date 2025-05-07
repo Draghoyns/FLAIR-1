@@ -222,6 +222,7 @@ def batch_metrics(config: dict, gt_dir: str) -> list:
             per_c_ious, avg_ious = class_IoU(confmat_cleaned)
             ovr_acc = overall_accuracy(confmat_cleaned)
             per_c_fscore, avg_fscore = class_fscore(confmat_cleaned)
+            avg_time = np.mean(config["times"][method])
 
         # method parameters
         tile_size, stride, margin, padding, stitching = str(method).split("_")

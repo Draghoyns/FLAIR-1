@@ -205,16 +205,9 @@ def run_pipeline(
 
     model = prepare_model(config, device)
 
-    # initializing
-    dataset = Sliced_Dataset(
-        dataframe=GeoDataFrame(),
-        img_path=input_img_path,
-        resolution=tuple(),
-        bands=channels,
-        patch_detection_size=img_pixels_detection,
-        norma_dict=norma_task,
-    )
     if compare:
+
+        method_times = {}
         # TODO
         padding_list = config["strategies"]["padding_overall"]
         if padding_list == []:
@@ -257,6 +250,13 @@ def run_pipeline(
                     for stride in stride_list:
                         for stitch in stitching_methods:
 
+                            method = f"size={img_pixels_detection}_stride={stride}_margin={margin}_padding={padding}_stitching={stitch}"
+                            identifier = "_" + method
+                            config, path_out = setup_indiv_path(config, identifier)
+
+                            # start timer
+                            start_time = datetime.datetime.now()
+
                             # slicing
                             sliced_dataframe, profile, resolution = prepare_tiles(
                                 config, stride, compare
@@ -271,10 +271,6 @@ def run_pipeline(
                                 patch_detection_size=img_pixels_detection,
                                 norma_dict=norma_task,
                             )
-
-                            method = f"size={img_pixels_detection}_stride={stride}_margin={margin}_padding={padding}_stitching={stitch}"
-                            identifier = "_" + method
-                            config, path_out = setup_indiv_path(config, identifier)
 
                             # get Dataloader
                             data_loader = DataLoader(
@@ -327,6 +323,16 @@ def run_pipeline(
                                             window=window,
                                         )
 
+                                    # compute time
+                                    inference_time = (
+                                        datetime.datetime.now() - start_time
+                                    )
+                                    inference_time = inference_time.total_seconds()
+                                    if method not in method_times:
+                                        method_times[method] = [inference_time]
+                                    else:
+                                        method_times[method].append(inference_time)
+
                                     compute_metrics_patch(
                                         prediction, window, config, method, metrics_json
                                     )
@@ -338,6 +344,8 @@ def run_pipeline(
                             print(
                                 f"""    [X] done writing metrics to {metrics_json.split('/')[-1]} file.\n"""
                             )
+
+                            config["times"] = method_times
 
     else:
 
@@ -411,7 +419,7 @@ def run_pipeline(
             [X] done writing to {path_out.split('/')[-1]} raster file.\n"""
         )
 
-    dataset.close_raster()
+    dataset.close_raster()  # type: ignore
 
     sys.stdout = sys.__stdout__
 
