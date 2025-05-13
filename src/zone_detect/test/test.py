@@ -160,8 +160,7 @@ if __name__ == "__main__":
     for pred in pred_path.iterdir():
         if not pred.is_file() or not pred.name.endswith(".tif"):
             continue
-        list_preds.append(pred)
-"""
+        list_preds.append(pred)"""
 
     # metrics analysis
 

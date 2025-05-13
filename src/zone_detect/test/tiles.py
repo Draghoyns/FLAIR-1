@@ -4,13 +4,27 @@ import numpy as np
 def get_stride(config: dict) -> list:
 
     ## handle default = no overlap handling
-    if "overlap_strat" not in config:
-        stride = [config["img_pixels_detection"] - 2 * config["margin"]]
-    elif config["overlap_strat"]:  # overlap is handled and parameterized
-        stride = config["strategies"]["tiling"]["stride_range"]
-    else:  # exact clipping
-        stride = [config["img_pixels_detection"] - 2 * config["margin"]]
+    if "overlap_strat" not in config or not config["overlap_strat"]:
+        stride = [int(config["img_pixels_detection"] - 2 * config["margin"])]
+    else:  # overlap is handled and parameterized
+        stride = [
+            int(i * config["img_pixels_detection"])
+            for i in config["strategies"]["tiling"]["stride_range"]
+        ]
     return stride
+
+
+def out_of_bounds(bigbox: list[float], box: list[float]) -> list[bool]:
+    """Check if the coordinates are out of bounds"""
+
+    oob = []
+    left, right, bottom, top = bigbox
+    for coord in box:
+        if coord < left or coord > right or coord < bottom or coord > top:
+            oob.append(True)
+        else:
+            oob.append(False)
+    return oob
 
 
 def get_tile_coord(

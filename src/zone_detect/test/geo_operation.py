@@ -4,7 +4,6 @@ import geopandas as gpd
 import rasterio
 from shapely import Polygon
 from shapely.geometry import box
-from src.zone_detect.test.test import geogr_patches, ground_truth_geoconv
 
 
 def create_box_from_bounds(
@@ -21,8 +20,6 @@ def slice_geo(
     write_dataframe: bool,
     patches: list[tuple[int, int, int, int]],
 ) -> tuple[gpd.GeoDataFrame, dict, tuple[float, float], list[int]]:
-
-    piiiiiii = ground_truth_geoconv(in_img, 512, margin, 384)
 
     # get geo info
     with rasterio.open(in_img) as src:

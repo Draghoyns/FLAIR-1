@@ -9,8 +9,12 @@ from rasterio.features import geometry_window
 from rasterio.windows import Window
 from rasterio.io import DatasetWriter
 
-from src.zone_detect.test.tiles import patch_overlap, patch_weights, total_weights
-from src.zone_detect.utils import truncate
+from src.zone_detect.test.tiles import (
+    patch_overlap,
+    patch_weights,
+    total_weights,
+    out_of_bounds,
+)
 
 
 def inference(
@@ -36,19 +40,6 @@ def inference(
     return predictions, indices
 
 
-def out_of_bounds(bigbox: list[float], box: list[float]) -> list[bool]:
-    """Check if the coordinates are out of bounds"""
-
-    oob = []
-    left, right, bottom, top = bigbox
-    for coord in box:
-        if coord < left or coord > right or coord < bottom or coord > top:
-            oob.append(True)
-        else:
-            oob.append(False)
-    return oob
-
-
 def stitching(
     config: dict,
     sliced_dataframe: gpd.GeoDataFrame,
@@ -65,7 +56,6 @@ def stitching(
     img_pixels_detection = config["img_pixels_detection"]
     output_type: str = config["output_type"]  # we only handle argmax for now
 
-    window = Window(col_off=0, row_off=0, width=img_pixels_detection, height=img_pixels_detection)  # type: ignore
     sliced_box = [
         sliced_dataframe.at[index[0], "left"],
         sliced_dataframe.at[index[0], "right"],
@@ -103,12 +93,12 @@ def stitching(
             sliced_dataframe.at[index[0], "right_o"],
             sliced_dataframe.at[index[0], "bottom_o"],
             sliced_dataframe.at[index[0], "top_o"],
-        ]
+        ]  # geo
         oob = np.array(out_of_bounds(bigbox, sliced_box)).astype(int)
         oob[0] = oob[0] * -1
         oob[2] = oob[2] * -1
 
-        bounding_box = np.array(sliced_box) + oob * margin
+        bounding_box = np.array(sliced_box) + oob * margin  # geo
 
         window = geometry_window(
             out, [create_polygon_from_bounds(*bounding_box)], pixel_precision=6

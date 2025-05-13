@@ -16,10 +16,19 @@ def preprocess_config(config: dict, compare: bool) -> dict:
     and raising obvious errors before any run."""
 
     # paths
-    # check existence ?
+    # check existence
+    assert os.path.exists(config["output_path"]), "Output path does not exist."
+    assert os.path.exists(config["input_img_path"]), "Input image path does not exist."
     config["input_img_path"] = Path(config["input_img_path"]).with_suffix(".tif")
-    config["truth_path"] = Path(config["truth_path"]).with_suffix(".tif")
-    config["metrics_out"] = Path(config["metrics_out"]).with_suffix(".json")
+
+    if compare:
+        assert os.path.exists(
+            config["metrics_out"]
+        ), "Output metrics path does not exist."
+        assert os.path.exists(config["truth_path"]), "Ground truth path does not exist."
+
+        config["truth_path"] = Path(config["truth_path"]).with_suffix(".tif")
+        config["metrics_out"] = Path(config["metrics_out"]).with_suffix(".json")
 
     # channels
     assert isinstance(config["channels"], list) and all(
@@ -35,12 +44,17 @@ def preprocess_config(config: dict, compare: bool) -> dict:
         and 2 * config["margin"] < config["img_pixels_detection"]
     ), "Margin should be an integer and less than half of img_pixels_detection"
     assert config["output_type"] in [
-        "argmax",
         "class_prob",
-    ], "Output type should be either argmax or class_prob"
+        "argmax",
+    ], "Invalid output type: should be argmax or class_prob."
     assert type(config["n_classes"]) == int, "n_classes should be an integer"
+    assert config["norma_task"][0]["norm_type"] in [
+        "custom",
+        "scaling",
+    ], "Invalid normalization type: should be custom or scaling."
 
     # model
+    assert os.path.isfile(config["model_weights"]), "Model weights file does not exist."
     if os.path.splitext(config["model_weights"])[1] not in [".pth", ".ckpt"]:
         raise ValueError(
             "Model weights should be a .pth or .ckpt file. "
@@ -84,6 +98,45 @@ def check_list_type(lst: list, expected_type: type) -> list:
     return res
 
 
+def info_extract(filename: str) -> dict:
+    """Extract the information from the filename, namely the region and the method used.
+    Args:
+        filename (str): the filename to extract the information from. Should be full path.
+    Returns:
+        dict: with the keys [dpt, zone, patch_size, stride, margin, padding, stitching] and other if they exist.
+    """
+
+    if not filename.endswith(".tif"):
+        raise ValueError("Filename should end with .tif what are you doing ?")
+    name = filename.split("/")[-1]
+    name = name.split(".")[0]
+    info = {}
+    region, method = name.split("_IRC-ARGMAX-S_")
+    # region info
+    region = region.split("_")
+    dpt, zone = region[:2], region[2:]
+    info["dpt"] = "D" + "_".join(dpt)
+    info["zone"] = "_".join(zone)
+    # method info
+    method = method.split("_")
+    for param in method:
+        if param.startswith("size="):
+            info["patch_size"] = int(param.split("=")[1])
+        elif param.startswith("stride="):
+            info["stride"] = int(param.split("=")[1])
+        elif param.startswith("margin="):
+            info["margin"] = int(param.split("=")[1])
+        elif param.startswith("padding="):
+            info["padding"] = param.split("=")[1]
+        elif param.startswith("stitching="):
+            info["stitching"] = param.split("=")[1]
+        else:
+            param = param.split("=")
+            info[param[0]] = param[1]
+
+    return info
+
+
 #### SETUP ####
 def setup_out_path(config: dict, compare: bool) -> tuple[dict, bool]:
     """Setup the output directory"""
@@ -119,20 +172,6 @@ def setup(args) -> tuple[dict, torch.device, bool, bool]:
 
 def setup_indiv_path(config: dict, identifier: str = "") -> tuple[dict, str]:
     """Setup the output path for individual images"""
-    assert isinstance(config["output_path"], str), "Output path does not exist."
-    assert os.path.exists(config["input_img_path"]), "Input image path does not exist."
-    assert (
-        config["margin"] * 2 < config["img_pixels_detection"]
-    ), "Margin is too large : margin*2 < img_pixels_detection"
-    assert config["output_type"] in [
-        "class_prob",
-        "argmax",
-    ], "Invalid output type: should be argmax or class_prob."
-    assert config["norma_task"][0]["norm_type"] in [
-        "custom",
-        "scaling",
-    ], "Invalid normalization type: should be custom or scaling."
-    assert os.path.isfile(config["model_weights"]), "Model weights file does not exist."
 
     out_name = config["output_name"] + identifier
 
@@ -140,7 +179,6 @@ def setup_indiv_path(config: dict, identifier: str = "") -> tuple[dict, str]:
         out_name += ".tif"
 
     try:
-        # Path(config['output_path']).mkdir(parents=True, exist_ok=True)
         base_name = out_name
         path_out = os.path.join(config["local_out"], base_name)
 
@@ -152,7 +190,6 @@ def setup_indiv_path(config: dict, identifier: str = "") -> tuple[dict, str]:
             new_name = f"{filename}_{counter}{ext}"
             path_out = os.path.join(config["local_out"], new_name)
             counter += 1
-        # config['output_name'] = os.path.splitext(os.path.basename(path_out))[0]
         return config, path_out
     except Exception as error:
         print(f"Something went wrong during detection configuration: {error}")

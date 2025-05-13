@@ -1,21 +1,24 @@
 # THIS IS NOT FOR CUSTOM STRATEGIES FOR ONE INFERENCE
 
+#### OUTPUT
 output_path:
-  /media/DATA/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out20250506
-output_name: 037_2021_UU_S1_4_ARGMAX-IRC-S # stem
+  /media/DATA/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out202505512
+output_name: 037_2021_UU_S1_4_IRC-ARGMAX-S # stem
+metrics_out: /media/DATA/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out20250506/metrics.json # JSON; None = new file
+output_type: "argmax" # prediction type
 
+#### INPUT AND GROUND TRUTH
+input_root: /media/DATA/INFERENCE_HS/DATA/dataset_zone_last/ortho # + dpt + zone
 input_img_path: /media/DATA/INFERENCE_HS/DATA/dataset_zone_last/ortho/D037_2021/UU_S1_4/037_2021_UU_S1_4_IRC.tif
 input_path : /media/DATA/INFERENCE_HS/DATA/dataset_zone_last/ortho/D037_2021 # optional - directory if multiple inputs
 
-channels: [1, 2, 3]
-
+truth_root: /media/DATA/INFERENCE_HS/DATA/dataset_zone_last/labels_raster/FLAIR_19 # + dpt + zone
 truth_path : /media/DATA/INFERENCE_HS/DATA/dataset_zone_last/labels_raster/FLAIR_19/D037_2021/UU_S1_4/D037_2021-UU_S1_4-MSK_FLAIR19-LABEL.tif
-metrics_out: /media/DATA/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out20250506/metrics.json # JSON; None = new file
 
+#### PARAMETERS
+channels: [1, 2, 3]
 img_pixels_detection: 512 # best for swin
 margin: 64 # for clipping
-output_type: "argmax" # prediction type
-n_classes: 19
 
 #### MODEL
 model_weights: /media/DATA/INFERENCE_HS/MODELS_IA/FLAIR1/swin-upernet-small_IRV_SET1/checkpoints/ckpt-epoch=84-val_loss=0.37_00_HF_SwinUpernet_Small_IR-R-G_set1.ckpt
@@ -43,7 +46,7 @@ norma_task:
   norm_stds: [39.69, 52.17, 45.38]
 
 #### COMPARISON PARAMETERS
-  # only if --compare=true when calling flair-detect
+  # only if --comp=true when calling flair-detect
 
 # used to ensure coherence between tiling and stitching parameters
 overlap_strat : False # for exact clipping, True if overlap is handled
@@ -63,21 +66,8 @@ strategies:
 
   padding_overall : [] # [~, zero, mirror] - for the outer edges of the input - TBC
 
-#__________METRICS___________#
-
-metrics: # TBC
-  # all of them are enabled by default in the code for now
-  - name : o_accuracy
-    enabled : True
-  - name : f1
-    enabled : True
-  - name : miou
-    enabled : True
-  - name : time
-    enabled : True
-
-
 #### CLASSES
+n_classes: 19
 classes: # k = value in MSK : v = [weight, name]
     1:  [1, 'building']
     2:  [1, 'pervious surface']

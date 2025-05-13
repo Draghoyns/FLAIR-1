@@ -80,6 +80,7 @@ def conf_log(
     |- stitching comparison: {"no" if not compare_handling else config['strategies']['stitching']['method']}
     |- padding: {"not handled" if not compare_handling else config["strategies"]['padding_overall']} \n """
 
+    print("    [ ] no comparison" if not compare_mode else "    [x] comparison")
     print(
         f"""
     |- output path: {config['output_path']}
@@ -184,7 +185,6 @@ def run_pipeline(
     config: dict, device: torch.device, use_gpu: bool, compare: bool
 ) -> None:
 
-    print("    [ ] no comparison" if not compare else "    [x] comparison")
     # extracting config parameters
     input_img_path = config["input_img_path"]
     channels = config["channels"]
@@ -223,7 +223,7 @@ def run_pipeline(
 
         if config["strategies"]["stitching"]["enabled"]:
             margin_list = config["strategies"]["stitching"]["margin"]
-            stitching_methods = config["strategies"]["stitching"]["method"]
+            stitching_methods = config["strategies"]["stitching"]["methods"]
         else:  # default stitching : exact clipping
             margin_list = [config["margin"]]
             stitching_methods = ["exact-clipping"]
@@ -239,7 +239,7 @@ def run_pipeline(
             for img_pixels_detection in tile_size_list:
                 config["img_pixels_detection"] = img_pixels_detection
                 for margin in margin_list:
-                    config["margin"] = margin
+                    config["margin"] = int(margin * img_pixels_detection)
                     # skip if parameters are not valid
                     if img_pixels_detection <= 2 * margin:
                         print(
@@ -250,6 +250,9 @@ def run_pipeline(
                     stride_list = get_stride(config)
                     for stride in stride_list:
                         for stitch in stitching_methods:
+
+                            config["overlap_strat"] = stitch != "exact-clipping"
+                            config["strategies"]["stitching"]["method"] = stitch
 
                             method = f"size={img_pixels_detection}_stride={stride}_margin={margin}_padding={padding}_stitching={stitch}"
                             identifier = "_" + method
@@ -429,7 +432,7 @@ def batch_metrics_pipeline(config: dict, compare: bool, gt_dpt: str) -> None:
     """
     Compute metrics for a batch of images.
     Args:
-        gt_dir (str): Path to the ground truth directory.
+        gt_dir (str): Path to the ground truth directory of the department.
         config (dict): Configuration, in which the parameters for the inference are specified
     """
 
@@ -483,15 +486,16 @@ def main():
 
     # setting up device and log
     config, device, use_gpu, compare = setup(args)
-    config = preprocess_config(config, compare)
 
-    if False:
-        run_pipeline(config, device, use_gpu, compare)
+    batch_mode = True
+
+    if batch_mode:
+        gt_dir = config["truth_root"]
+        gt_dpt = gt_dir + "/" + config["truth_path"].split("/")[-3]
+
+        batch_metrics_pipeline(config, compare, gt_dpt)
     else:
-        # batch mode
-        gt_dir = Path(config["truth_path"]).parent.parent
-
-        batch_metrics_pipeline(config, compare, str(gt_dir))
+        run_pipeline(config, device, use_gpu, compare)
 
 
 if __name__ == "__main__":

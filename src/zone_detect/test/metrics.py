@@ -10,8 +10,8 @@ from rasterio.windows import Window
 from sklearn.metrics import confusion_matrix
 from tqdm import tqdm
 
-from src.zone_detect.test.tiles import get_stride
 from src.zone_detect.test.pixel_operation import slice_pixels
+from src.zone_detect.utils import info_extract
 
 
 #### UTILS ####
@@ -51,13 +51,9 @@ def collect_paths_truth(config: dict, gt_dir: str) -> pd.DataFrame:
 
     # dataframe with pred path, gt path and method single string
     for timestamp in sorted(timed_folders):
-
         pred_files = list(timestamp.rglob("*.tif"))
 
-        # extract region info
-        region_id = str(pred_files[0].name).split("_IRC-ARGMAX-S_")[0]
-        dpt, zone_name = region_id.split("_")[:2], region_id.split("_")[2:]
-        zone_name = "_".join(zone_name)
+        zone_name = info_extract(str(pred_files[0]))["zone"]
 
         # corresponding ground truth
         # we consider gt_folder the dpt folder
@@ -147,13 +143,13 @@ def compute_metrics_patch(
     confmat_cleaned = clean_confmat(confmat, config)
 
     with np.errstate(divide="ignore", invalid="ignore"):
-        # nans are handled dont worry
+        # nans are handled don't worry
         per_c_ious, avg_ious = class_IoU(confmat_cleaned)
         ovr_acc = overall_accuracy(confmat_cleaned)
         per_c_fscore, avg_fscore = class_fscore(confmat_cleaned)
 
     # save metrics to a json file : raw or post-stitching
-    out = Path(out_json).with_suffix(".json")
+    out = Path(out_json)
     key = f"{method}_{window.col_off}_{window.row_off}"
     metrics = {
         key: {
@@ -177,7 +173,6 @@ def compute_metrics_patch(
     with open(out, "a") as f:
         json.dump(metrics, f)
         f.write("\n")
-        # add a new line for each entry
 
 
 def batch_metrics(config: dict, gt_dir: str) -> list:
@@ -187,7 +182,6 @@ def batch_metrics(config: dict, gt_dir: str) -> list:
     grouped = df.groupby("method")
 
     # metrics for each method
-    # TODO : add a progress bar
     for method, group in tqdm(grouped, desc="Computing metrics"):
 
         pred_paths = group["pred_path"].tolist()
@@ -225,12 +219,12 @@ def batch_metrics(config: dict, gt_dir: str) -> list:
             avg_time = np.mean(config["times"][method])
 
         # method parameters
-        tile_size, stride, margin, padding, stitching = str(method).split("_")
-        tile_size = int(tile_size.split("=")[1])
-        stride = int(stride.split("=")[1])
-        margin = int(margin.split("=")[1])
-        padding = padding.split("=")[1]
-        stitching = stitching.split("=")[1]
+        info = info_extract("/" + str(method) + ".tif")
+        patch_size = info["patch_size"]
+        stride = info["stride"]
+        margin = info["margin"]
+        padding = info["padding"]
+        stitching = info["stitching"]
 
         metrics = {
             "Method parameters": [
@@ -243,7 +237,7 @@ def batch_metrics(config: dict, gt_dir: str) -> list:
             ],
             "Parameters values": [
                 config["model_name"],
-                tile_size,
+                patch_size,
                 stride,
                 margin,
                 padding,
@@ -268,19 +262,29 @@ def batch_metrics(config: dict, gt_dir: str) -> list:
 
 
 # not incorporated in the pipeline, but maybe as option ?
-def error_rate_patch(config: dict, out_dir: str, pred_filename: str = "") -> None:
-    # output file
+def error_rate_patch(truth_file: str, out_dir: str, pred_file: str) -> None:
+    """Compute the error rate per patch for a given input.
+    You need to provide full paths
+    """
+
+    # slice prediction parameters
+    pred_path = Path(pred_file)
+
+    file_info = info_extract(pred_file)
+    dpt, zone = file_info["dpt"], file_info["zone"]
+    patch_size, stride, margin = (
+        file_info["patch_size"],
+        file_info["stride"],
+        file_info["margin"],
+    )
+
+    full_method = pred_file.split("/")[-1].split("_IRC-ARGMAX-S_")[1].split(".tif")[0]
+
+    region_check = f"{dpt}/{zone}/himom.tif"
+
+    # sanity check
     assert out_dir is not None, "Please provide an output path for the metrics"
-
-    truth_path = valid_truth(config)
-
-    # prediction path
-    pred_folder = Path(config["output_path"])
-    pred_path = pred_folder / pred_filename
-    if pred_filename == "":
-        pred_path = next(pred_folder.glob("*.tif"), None)  # select the first one
-    if pred_path is None:
-        raise ValueError(f"No prediction file found in {pred_folder}")
+    truth_path = valid_truth({"truth_path": truth_file, "input_img_path": region_check})
 
     # load images in arrays
     # PIL struggles (multi band, 16 bit, float32)
@@ -293,11 +297,11 @@ def error_rate_patch(config: dict, out_dir: str, pred_filename: str = "") -> Non
     img_size = target.shape[0], target.shape[1]
     patches = slice_pixels(
         img_size,
-        config["img_pixels_detection"],
-        config["margin"],
-        get_stride(config)[0],
+        patch_size,
+        margin,
+        stride,
     )
-    effective_patch_size = config["img_pixels_detection"] - 2 * config["margin"]
+    effective_patch_size = patch_size - 2 * margin
     out_array = np.zeros(
         (effective_patch_size, effective_patch_size),
     )
@@ -318,20 +322,16 @@ def error_rate_patch(config: dict, out_dir: str, pred_filename: str = "") -> Non
 
     # i'm afraid of the memory
 
-    # useful info : method used, error rate
-
-    method = str(pred_path).split("IRC-ARGMAX-S_")[-1].split(".tif")[0]
-
     out_path = Path(out_dir)
     out_path.mkdir(parents=True, exist_ok=True)
-    out_path = out_path / f"error_rate_{method}_{datetime.datetime.now()}.png"
+    out_path = out_path / f"error_rate_{full_method}_{datetime.datetime.now()}.png"
 
     # save the error rate as a png
     plt.figure(figsize=(10, 10))
     plt.axis("off")
     plt.imshow(out_array, cmap="hot", interpolation="nearest", vmin=0.025, vmax=0.25)
     plt.colorbar()
-    plt.title("Error Rate for method : \n" + method)
+    plt.title("Error Rate for method : \n" + full_method)
     plt.savefig(str(out_path))
     plt.close()
     print(f"Error rate saved to {out_path}")
@@ -339,13 +339,6 @@ def error_rate_patch(config: dict, out_dir: str, pred_filename: str = "") -> Non
 
 #### ANALYSIS ####
 def load_metrics_json(json_path: str) -> dict:
-    """
-    Load the metrics from a json file.
-    Args:
-        json_path (str): Path to the json file.
-    Returns:
-        dict: Dictionary containing the metrics.
-    """
     with open(json_path, "r") as f:
         data = json.load(f)
     return data
@@ -354,10 +347,6 @@ def load_metrics_json(json_path: str) -> dict:
 def flatten_metrics(metrics: dict) -> pd.DataFrame:
     """
     Flatten the metrics dictionary into a pandas DataFrame.
-    Args:
-        metrics (dict): Dictionary containing the metrics.
-    Returns:
-        pd.DataFrame: DataFrame containing the metrics.
     """
     flat_metrics = []
     for key, value in metrics.items():
@@ -377,17 +366,11 @@ def flatten_metrics(metrics: dict) -> pd.DataFrame:
 def analyze_param(df: pd.DataFrame, param: str, metric: str) -> pd.DataFrame:
     """
     Analyze the metrics for a given parameter.
-    Args:
-        df (pd.DataFrame): DataFrame containing the metrics.
-        param (str): Parameter to analyze.
-        metric (str): Metric to analyze.
-    Returns:
-        pd.DataFrame: DataFrame containing the analyzed metrics.
     """
     # filter the dataframe for the given parameter
     df = df[df["key"].str.contains(param)]
     # extract the parameter values
-    df[param] = df["key"].str.extract(f"{param}=(\d+)")
+    df[param] = df["key"].str.extract(rf"{param}=(\d+)")
     # convert to numeric
     df[param] = pd.to_numeric(df[param])
     # group by parameter and compute the mean of the metric
@@ -398,10 +381,6 @@ def analyze_param(df: pd.DataFrame, param: str, metric: str) -> pd.DataFrame:
 def plot_metrics(df: pd.DataFrame, param: str, metric: str) -> None:
     """
     Plot the metrics for a given parameter.
-    Args:
-        df (pd.DataFrame): DataFrame containing the metrics.
-        param (str): Parameter to plot.
-        metric (str): Metric to plot.
     """
     plt.figure(figsize=(10, 5))
     plt.plot(df[param], df[metric], marker="o")
