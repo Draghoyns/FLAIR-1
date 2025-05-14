@@ -62,7 +62,7 @@ def collect_paths_truth(config: dict, gt_dir: str) -> pd.DataFrame:
 
         for pred_path in pred_files:
             method_id = Path(pred_path.name.split("IRC-ARGMAX-S_")[1]).stem
-            # zone_name_IRC-ARGMAX-S_size=128_stride=96_margin=32_padding=some-padding_stitching=exact_clipping
+            # zone_name_IRC-ARGMAX-S_size=128_stride=96_margin=32_padding=some-padding_stitching=exact-clipping
             path_collection.append(
                 {
                     "pred_path": str(pred_path),

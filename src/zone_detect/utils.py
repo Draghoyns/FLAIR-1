@@ -4,16 +4,28 @@ from pathlib import Path
 import torch
 import yaml
 
+from src.zone_detect.test.tiles import get_stride
+
 
 #### CONFIG ####
-def read_config(file_path: str) -> dict:
+def read_config(args) -> dict:
+    file_path = args.conf
     with open(file_path, "r") as f:
-        return yaml.safe_load(f)
+        config = yaml.safe_load(f)
+
+    # put arguments in config
+    config["metrics"] = args.metrics
+    config["batch_mode"] = args.batch_mode
+    config["compare"] = args.compare
+
+    return preprocess_config(config)
 
 
-def preprocess_config(config: dict, compare: bool) -> dict:
+def preprocess_config(config: dict) -> dict:
     """Clean the config file by formatting correctly
     and raising obvious errors before any run."""
+
+    compare = config["compare"]
 
     # paths
     # check existence
@@ -98,6 +110,64 @@ def check_list_type(lst: list, expected_type: type) -> list:
     return res
 
 
+def gen_param_combination(config: dict) -> list:
+    """Generate all possible combinations of parameters.
+    Handles single case or iterative case."""
+    combi = []
+
+    # TODO
+    padding_list = config["strategies"]["padding_overall"]
+    if padding_list == []:
+        padding_list = ["no-padding"]
+
+    # configuration for comparison
+
+    if config["strategies"]["tiling"]["enabled"]:
+        tile_size_list = config["strategies"]["tiling"]["size_range"]
+    else:
+        tile_size_list = [config["img_pixels_detection"]]
+
+    if config["strategies"]["stitching"]["enabled"]:
+        margin_list = config["strategies"]["stitching"]["margin"]
+        stitching_methods = config["strategies"]["stitching"]["methods"]
+    else:  # default stitching : exact clipping
+        margin_list = [config["margin"]]
+        stitching_methods = ["exact-clipping"]
+
+    # basically a grid comparison
+    # could probably benefit from some optimization but ehhh
+
+    for padding in padding_list:
+        for img_pixels_detection in tile_size_list:
+            config["img_pixels_detection"] = img_pixels_detection
+            for margin in margin_list:
+                config["margin"] = int(margin * img_pixels_detection)
+                # skip if parameters are not valid
+                if img_pixels_detection <= 2 * margin:
+                    print(
+                        f"""    [x] skipping {img_pixels_detection} pixels detection size with {margin} margin..."""
+                    )
+                    continue
+
+                stride_list = get_stride(config)
+                for stride in stride_list:
+                    for stitch in stitching_methods:
+
+                        config["overlap_strat"] = stitch != "exact-clipping"
+                        config["strategies"]["stitching"]["method"] = stitch
+
+                        param = {
+                            "img_pixels_detection": img_pixels_detection,
+                            "margin": margin,
+                            "padding": padding,
+                            "stitching": stitch,
+                            "stride": stride,
+                        }
+                        combi.append(param)
+
+    return combi
+
+
 def info_extract(filename: str) -> dict:
     """Extract the information from the filename, namely the region and the method used.
     Args:
@@ -138,18 +208,18 @@ def info_extract(filename: str) -> dict:
 
 
 #### SETUP ####
-def setup_out_path(config: dict, compare: bool) -> tuple[dict, bool]:
+def setup_out_path(config: dict) -> dict:
     """Setup the output directory"""
     Path(config["output_path"]).mkdir(parents=True, exist_ok=True)
 
-    if compare:
+    if config["compare"]:
         # create a directory with a unique id
         current_time = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         child_dir = os.path.join(config["output_path"], current_time)
         os.makedirs(child_dir, exist_ok=True)
         config["local_out"] = child_dir
 
-    return config, compare
+    return config
 
 
 def setup_device(config: dict) -> tuple[torch.device, bool]:
@@ -161,13 +231,13 @@ def setup_device(config: dict) -> tuple[torch.device, bool]:
     return device, use_gpu
 
 
-def setup(args) -> tuple[dict, torch.device, bool, bool]:
+def setup(args) -> tuple[dict, torch.device, bool]:
     """Setup the device and output path"""
-    config = read_config(args.conf)
+    config = read_config(args)
     device, use_gpu = setup_device(config)
-    config, compare = setup_out_path(config, args.compare)
+    config = setup_out_path(config)
 
-    return config, device, use_gpu, compare
+    return config, device, use_gpu
 
 
 def setup_indiv_path(config: dict, identifier: str = "") -> tuple[dict, str]:

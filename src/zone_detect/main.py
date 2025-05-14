@@ -20,7 +20,7 @@ from src.zone_detect.test.tiles import get_stride
 from src.zone_detect.compare import inference, stitching
 
 from src.zone_detect.utils import (
-    preprocess_config,
+    gen_param_combination,
     setup_device,
     setup_out_path,
     setup,
@@ -32,9 +32,16 @@ warnings.simplefilter(action="ignore", category=FutureWarning)
 
 #### CONF FILE
 argParser = argparse.ArgumentParser()
-argParser.add_argument("--conf", help="Path to the .yaml config file")
+argParser.add_argument("--conf", help="path to the .yaml config file")
 argParser.add_argument(
-    "--compare", help="True to compare different methods", default=False, type=bool
+    "-c",
+    "--compare",
+    action="store_true",
+    help="compare different methods",
+)
+argParser.add_argument("-m", "--metrics", action="store_true", help="compute metrics")
+argParser.add_argument(
+    "-b", "--batch_mode", action="store_true", help="run on a batch of input images"
 )
 
 
@@ -59,7 +66,6 @@ def conf_log(
     config: dict,
     resolution: tuple[float, float],
     img_size: list[int],
-    compare_mode: bool,
 ) -> None:
     # Determine model template info based on provider
     provider = config["model_framework"]["model_provider"]
@@ -80,7 +86,7 @@ def conf_log(
     |- stitching comparison: {"no" if not compare_handling else config['strategies']['stitching']['method']}
     |- padding: {"not handled" if not compare_handling else config["strategies"]['padding_overall']} \n """
 
-    print("    [ ] no comparison" if not compare_mode else "    [x] comparison")
+    print("    [ ] no comparison" if not config["compare"] else "    [x] comparison")
     print(
         f"""
     |- output path: {config['output_path']}
@@ -99,14 +105,15 @@ def conf_log(
     |- model template: {model_template}
     |- device: {"cuda" if config['use_gpu'] else "cpu"}
     |- batch size: {config['batch_size']}
-    {compare_param if compare_mode else ""}
+    {compare_param if config["compare"] else ""}
     """
     )
 
 
 # __________Prepare objects___________#
 def prepare_tiles(
-    config: dict, stride: int, compare: bool
+    config: dict,
+    stride: int,
 ) -> tuple[GeoDataFrame, dict, tuple]:
     ## slicing extent for overlapping detection
     sliced_dataframe, profile, resolution, img_size = slice_extent(
@@ -119,10 +126,45 @@ def prepare_tiles(
         stride=stride,
     )
     ## log
-    conf_log(config, resolution, img_size, compare)
+    conf_log(config, resolution, img_size)
     print(f"""    [x] sliced input raster to {len(sliced_dataframe)} squares...""")
 
     return sliced_dataframe, profile, resolution
+
+
+def prepare_data(
+    config: dict, stride: int
+) -> tuple[DataLoader, GeoDataFrame, dict, tuple]:
+
+    channels = config["channels"]
+    norma_task = config["norma_task"]
+    batch_size = config["batch_size"]
+    num_worker = config["num_worker"]
+    input_img_path = config["input_img_path"]
+    img_pixels_detection = config["img_pixels_detection"]
+
+    # slicing
+    sliced_dataframe, profile, resolution = prepare_tiles(config, stride)
+
+    # get dataset
+    dataset = Sliced_Dataset(
+        dataframe=sliced_dataframe,
+        img_path=input_img_path,
+        resolution=resolution,
+        bands=channels,
+        patch_detection_size=img_pixels_detection,
+        norma_dict=norma_task,
+    )
+
+    # get Dataloader
+    data_loader = DataLoader(
+        dataset,
+        batch_size=batch_size,
+        num_workers=num_worker,
+        pin_memory=True,
+    )
+
+    return data_loader, sliced_dataframe, profile, resolution
 
 
 def prepare_model(config: dict, device: torch.device) -> torch.nn.Module:
@@ -145,14 +187,16 @@ def prepare_model(config: dict, device: torch.device) -> torch.nn.Module:
     return model
 
 
-def prepare_output_raster(
-    path_out: str,
+def prepare_output(
+    config: dict,
     profile: dict,
-    img_pixels_detection: int,
-    output_type: str,
-    n_classes: int,
-) -> rasterio.io.DatasetWriter:  # type: ignore
-    """Prepare output raster profile"""
+) -> tuple[rasterio.io.DatasetWriter, str]:  # type: ignore
+    """Prepare output raster profile and output path"""
+
+    config, path_out = setup_indiv_path(config)
+    output_type = config["output_type"]
+    n_classes = config["n_classes"]
+
     out_overall_profile = profile.copy()
     out_overall_profile.update(
         {
@@ -161,227 +205,143 @@ def prepare_output_raster(
             "driver": "GTiff",
             "BIGTIFF": "YES",
             "tiled": True,
-            "blockxsize": img_pixels_detection,
-            "blockysize": img_pixels_detection,
+            "blockxsize": config["img_pixels_detection"],
+            "blockysize": config["img_pixels_detection"],
         }
     )
     out_overall_profile["count"] = [2 if output_type == "argmax" else n_classes][0]
     # second band gives the max probability
     out = rasterio.open(path_out, "w+", **out_overall_profile)
-    return out
+    return out, path_out
 
 
 # _________PIPELINES__________#
-def run_from_config(config: dict, compare: bool) -> None:
+def run_from_config(config: dict) -> None:
     """Run the pipeline from a config file"""
     # setting up device and log
     device, use_gpu = setup_device(config)
-    config, compare = setup_out_path(config, compare)
+    config = setup_out_path(config)
 
-    run_pipeline(config, device, use_gpu, compare)
+    run_pipeline(config, device, use_gpu)
 
 
-def run_pipeline(
-    config: dict, device: torch.device, use_gpu: bool, compare: bool
-) -> None:
+def run_pipeline(config: dict, device: torch.device, use_gpu: bool) -> None:
 
     # extracting config parameters
-    input_img_path = config["input_img_path"]
-    channels = config["channels"]
-    norma_task = config["norma_task"]
-    batch_size = config["batch_size"]
-    num_worker = config["num_worker"]
     output_type = config["output_type"]
     n_classes = config["n_classes"]
 
-    img_pixels_detection = config["img_pixels_detection"]
+    # log
     log_filename = os.path.join(
         config["local_out"],
         f"{config['output_name']}_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.log",
     )
-
     sys.stdout = Logger(filename=log_filename)
     sys.stderr = sys.stdout
     print(f"    [LOGGER] Writing logs to: {log_filename}")
 
     model = prepare_model(config, device)
 
-    if compare:
+    if config["compare"]:
 
         method_times = {}
-        # TODO
-        padding_list = config["strategies"]["padding_overall"]
-        if padding_list == []:
-            padding_list = ["no-padding"]
-
-        # configuration for comparison
-
-        if config["strategies"]["tiling"]["enabled"]:
-            tile_size_list = config["strategies"]["tiling"]["size_range"]
-        else:
-            tile_size_list = [img_pixels_detection]
-
-        if config["strategies"]["stitching"]["enabled"]:
-            margin_list = config["strategies"]["stitching"]["margin"]
-            stitching_methods = config["strategies"]["stitching"]["methods"]
-        else:  # default stitching : exact clipping
-            margin_list = [config["margin"]]
-            stitching_methods = ["exact-clipping"]
-
-        # basically a grid comparison
-        # could probably benefit from some optimization but ehhh
 
         # common to a zone (= one tif image)
         metrics_json = config["local_out"] + "/metrics_per-patch_final.json"
 
         print(f"""    [ ] starting comparison...\n""")
-        for padding in padding_list:
-            for img_pixels_detection in tile_size_list:
-                config["img_pixels_detection"] = img_pixels_detection
-                for margin in margin_list:
-                    config["margin"] = int(margin * img_pixels_detection)
-                    # skip if parameters are not valid
-                    if img_pixels_detection <= 2 * margin:
-                        print(
-                            f"""    [x] skipping {img_pixels_detection} pixels detection size with {margin} margin..."""
+
+        settings = gen_param_combination(config)
+        for combi in settings:
+
+            img_pixels_detection = combi["img_pixels_detection"]
+            margin = combi["margin"]
+            padding = combi["padding"]
+            stride = combi["stride"]
+            stitch = combi["stitching"]
+
+            method = f"size={img_pixels_detection}_stride={stride}_margin={margin}_padding={padding}_stitching={stitch}"
+            identifier = "_" + method
+            config, path_out = setup_indiv_path(config, identifier)
+
+            # start timer
+            start_time = datetime.datetime.now()
+
+            data_loader, sliced_dataframe, profile, resolution = prepare_data(
+                config, stride
+            )
+            # prepare output raster
+            out, path_out = prepare_output(
+                config,
+                profile,
+            )
+            print(f"""    [ ] starting inference...\n""")
+            for samples in tqdm(data_loader):
+
+                predictions, indices = inference(
+                    device=device,
+                    model=model,
+                    use_gpu=use_gpu,
+                    config=config,
+                    samples=samples,
+                )
+                # writing windowed raster to output raster
+                for prediction, index in zip(predictions, indices):
+
+                    # stitching method is handled inside
+                    prediction, window = stitching(
+                        config,
+                        sliced_dataframe,
+                        prediction,
+                        index,
+                        out,
+                        stitch,
+                        stride,
+                        resolution,
+                    )
+                    # write
+                    if output_type == "argmax":
+                        out.write_band([1, 2], prediction, window=window)
+                    else:
+                        out.write_band(
+                            [i for i in range(1, n_classes + 1)],
+                            prediction,
+                            window=window,
                         )
-                        continue
 
-                    stride_list = get_stride(config)
-                    for stride in stride_list:
-                        for stitch in stitching_methods:
+                    # compute metrics
+                    inference_time = datetime.datetime.now() - start_time
+                    inference_time = inference_time.total_seconds()
+                    if method not in method_times:
+                        method_times[method] = [inference_time]
+                    else:
+                        method_times[method].append(inference_time)
 
-                            config["overlap_strat"] = stitch != "exact-clipping"
-                            config["strategies"]["stitching"]["method"] = stitch
+                    compute_metrics_patch(
+                        prediction, window, config, method, metrics_json
+                    )
 
-                            method = f"size={img_pixels_detection}_stride={stride}_margin={margin}_padding={padding}_stitching={stitch}"
-                            identifier = "_" + method
-                            config, path_out = setup_indiv_path(config, identifier)
+            out.close()
+            print(
+                f"""    [X] done writing to {path_out.split('/')[-1]} raster file.\n"""
+            )
+            print(
+                f"""    [X] done writing metrics to {metrics_json.split('/')[-1]} file.\n"""
+            )
 
-                            # start timer
-                            start_time = datetime.datetime.now()
-
-                            # slicing
-                            sliced_dataframe, profile, resolution = prepare_tiles(
-                                config, stride, compare
-                            )
-
-                            # get dataset
-                            dataset = Sliced_Dataset(
-                                dataframe=sliced_dataframe,
-                                img_path=input_img_path,
-                                resolution=resolution,
-                                bands=channels,
-                                patch_detection_size=img_pixels_detection,
-                                norma_dict=norma_task,
-                            )
-
-                            # get Dataloader
-                            data_loader = DataLoader(
-                                dataset,
-                                batch_size=batch_size,
-                                num_workers=num_worker,
-                                pin_memory=True,
-                            )
-                            # prepare output raster
-                            out = prepare_output_raster(
-                                path_out,
-                                profile,
-                                img_pixels_detection,
-                                output_type,
-                                n_classes,
-                            )
-                            print(f"""    [ ] starting inference...\n""")
-                            for samples in tqdm(data_loader):
-
-                                predictions, indices = inference(
-                                    device=device,
-                                    model=model,
-                                    use_gpu=use_gpu,
-                                    config=config,
-                                    samples=samples,
-                                )
-                                # writing windowed raster to output rastert
-                                for prediction, index in zip(predictions, indices):
-
-                                    # stitching method is handled inside
-                                    prediction, window = stitching(
-                                        config,
-                                        sliced_dataframe,
-                                        prediction,
-                                        index,
-                                        out,
-                                        stitch,
-                                        stride,
-                                        resolution,
-                                    )
-                                    # write
-                                    if output_type == "argmax":
-                                        out.write_band(
-                                            [1, 2], prediction, window=window
-                                        )
-                                    else:
-                                        out.write_band(
-                                            [i for i in range(1, n_classes + 1)],
-                                            prediction,
-                                            window=window,
-                                        )
-
-                                    # compute time
-                                    inference_time = (
-                                        datetime.datetime.now() - start_time
-                                    )
-                                    inference_time = inference_time.total_seconds()
-                                    if method not in method_times:
-                                        method_times[method] = [inference_time]
-                                    else:
-                                        method_times[method].append(inference_time)
-
-                                    compute_metrics_patch(
-                                        prediction, window, config, method, metrics_json
-                                    )
-
-                            out.close()
-                            print(
-                                f"""    [X] done writing to {path_out.split('/')[-1]} raster file.\n"""
-                            )
-                            print(
-                                f"""    [X] done writing metrics to {metrics_json.split('/')[-1]} file.\n"""
-                            )
-
-                            config["times"] = method_times
+            config["times"] = method_times
 
     else:
 
         # default configuration : exact clipping and default sized tiling
-        # slicing
+
         stride = get_stride(config)[0]
-        sliced_dataframe, profile, resolution = prepare_tiles(config, stride, compare)
-
-        # get dataset
-        dataset = Sliced_Dataset(
-            dataframe=sliced_dataframe,
-            img_path=input_img_path,
-            resolution=resolution,
-            bands=channels,
-            patch_detection_size=img_pixels_detection,
-            norma_dict=norma_task,
+        data_loader, sliced_dataframe, profile, resolution = prepare_data(
+            config, stride
         )
-
-        config, path_out = setup_indiv_path(config)
 
         # prepare output raster
-        out = prepare_output_raster(
-            path_out, profile, img_pixels_detection, output_type, n_classes
-        )
-
-        # get Dataloader
-        data_loader = DataLoader(
-            dataset,
-            batch_size=batch_size,
-            num_workers=num_worker,
-            pin_memory=True,
-        )
+        out, path_out = prepare_output(config, profile)
         # inference loop
 
         print(f"""    [ ] starting inference...\n""")
@@ -428,7 +388,7 @@ def run_pipeline(
     sys.stdout = sys.__stdout__
 
 
-def batch_metrics_pipeline(config: dict, compare: bool, gt_dpt: str) -> None:
+def batch_metrics_pipeline(config: dict, gt_dpt: str) -> None:
     """
     Compute metrics for a batch of images.
     Args:
@@ -462,7 +422,7 @@ def batch_metrics_pipeline(config: dict, compare: bool, gt_dpt: str) -> None:
         config["output_name"] = str(irc_path).split("/")[-1].split(".")[0] + "-ARGMAX-S"
 
         # Inference and saving the predictions
-        run_from_config(config, compare)
+        run_from_config(config)
 
     # we have all the predictions in the output folder
 
@@ -485,17 +445,15 @@ def main():
     args = argParser.parse_args()
 
     # setting up device and log
-    config, device, use_gpu, compare = setup(args)
+    config, device, use_gpu = setup(args)
 
-    batch_mode = True
-
-    if batch_mode:
+    if args.batch_mode:
         gt_dir = config["truth_root"]
         gt_dpt = gt_dir + "/" + config["truth_path"].split("/")[-3]
 
-        batch_metrics_pipeline(config, compare, gt_dpt)
+        batch_metrics_pipeline(config, gt_dpt)
     else:
-        run_pipeline(config, device, use_gpu, compare)
+        run_pipeline(config, device, use_gpu)
 
 
 if __name__ == "__main__":

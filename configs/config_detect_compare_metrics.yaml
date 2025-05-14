@@ -1,4 +1,6 @@
 # THIS IS NOT FOR CUSTOM STRATEGIES FOR ONE INFERENCE
+# command : 
+#flair-detect --conf=/media/DATA/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/config_detect_compare_metrics.yaml --comp=True
 
 #### OUTPUT
 output_path:
@@ -18,7 +20,7 @@ truth_path : /media/DATA/INFERENCE_HS/DATA/dataset_zone_last/labels_raster/FLAIR
 #### PARAMETERS
 channels: [1, 2, 3]
 img_pixels_detection: 512 # best for swin
-margin: 64 # for clipping
+margin: 0 # for clipping, in percentage of the tile size
 
 #### MODEL
 model_weights: /media/DATA/INFERENCE_HS/MODELS_IA/FLAIR1/swin-upernet-small_IRV_SET1/checkpoints/ckpt-epoch=84-val_loss=0.37_00_HF_SwinUpernet_Small_IR-R-G_set1.ckpt
@@ -60,8 +62,8 @@ strategies:
 
   stitching : # overlap is determined by tiling
     enabled : False
-    method: clipping
-    methods : [average, average_weights max, exact_clipping] # max = max confidence
+    method: exact-clipping
+    methods : [average, average_weights, max, exact-clipping] # max = max confidence
     margin : [0.125] # percentage of the tile size
 
   padding_overall : [] # [~, zero, mirror] - for the outer edges of the input - TBC
