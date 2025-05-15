@@ -189,4 +189,4 @@ if __name__ == "__main__":
         # error_rate(truth, out_dir, pred)
         # test error rate on patch
 
-        error_rate(truth, out_dir, pred)
+        dic = error_rate_loop(Path(truth), Path(out_dir), pred)

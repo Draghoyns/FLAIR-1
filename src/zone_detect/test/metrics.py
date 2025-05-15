@@ -259,8 +259,6 @@ def batch_metrics(config: dict, truth_dir: Path) -> list:
 
 
 def error_rate_loop(truth_dir: Path, out_dir: Path, pred_dir: Path) -> None:
-    # TODO
-    save = True
     dic = {}
 
     for pred_path in pred_dir.iterdir():
@@ -273,8 +271,40 @@ def error_rate_loop(truth_dir: Path, out_dir: Path, pred_dir: Path) -> None:
             out_dir=out_dir,
             pred_path=pred_path,
             dic={},
-            save=save,
+            save=False,
         )
+
+    # aggregate the error rate for each method over all kays
+    methods = dict()
+    total = dict()
+    for key in dic.keys():
+        # get the method name
+        method = info_extract(Path(key))["method"]
+        if method not in methods.keys():
+            methods[method] = dic[key]
+            total[method] = 1
+        else:
+            methods[method] += dic[key]
+            total[method] += 1
+    for key in methods.keys():
+        methods[key] = methods[key] / total[key]
+        # save the error rate as a png
+        autoscale = False
+        if autoscale:
+            vmin = np.min(methods[key])
+            vmax = np.max(methods[key])
+        else:
+            vmin = 0.025
+            vmax = 0.25
+        plt.figure(figsize=(10, 10))
+        plt.axis("off")
+        plt.imshow(
+            methods[key], cmap="plasma", interpolation="nearest", vmin=vmin, vmax=vmax
+        )
+        plt.colorbar()
+        plt.title("Error Rate for method : \n" + key)
+        plt.savefig(str(out_dir / f"error_rate_{key}.png"))
+        plt.close()
 
 
 # not incorporated in the pipeline, but maybe as option ?
