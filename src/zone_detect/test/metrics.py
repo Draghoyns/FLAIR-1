@@ -34,7 +34,10 @@ def valid_truth(config: dict) -> Path:
     truth_path = config["truth_path"]
     # verify coherence with input path
     sanity_check = config["input_img_path"].split("/")[-3:-1]  # zone
-    if truth_path.split("/")[-3:-1] != sanity_check:
+    # sanity_check[0] = sanity_check[0][1:]
+    # because there's a D sometimes and sometimes not
+    truth_check = truth_path.split("/")[-3:-1]
+    if truth_check != sanity_check:
         raise ValueError(
             f"Ground truth path {truth_path} does not match input path {config['input_img_path']}"
         )
@@ -262,7 +265,7 @@ def batch_metrics(config: dict, gt_dir: str) -> list:
 
 
 # not incorporated in the pipeline, but maybe as option ?
-def error_rate_patch(truth_file: str, out_dir: str, pred_file: str) -> None:
+def error_rate_patch(truth_file: str, out_dir: str, pred_file: str) -> np.ndarray:
     """Compute the error rate per patch for a given input.
     You need to provide full paths
     """
@@ -284,12 +287,15 @@ def error_rate_patch(truth_file: str, out_dir: str, pred_file: str) -> None:
 
     # sanity check
     assert out_dir is not None, "Please provide an output path for the metrics"
+    Path(out_dir).mkdir(parents=True, exist_ok=True)
+    # for testing purposes we comment out
     truth_path = valid_truth({"truth_path": truth_file, "input_img_path": region_check})
+    # truth_path = truth_file
 
     # load images in arrays
     # PIL struggles (multi band, 16 bit, float32)
     with rasterio.open(truth_path) as src:
-        target = src.read(1) - 1  # -1 to match the prediction
+        target = src.read(1) - 1  # to match the prediction
     with rasterio.open(pred_path) as src:
         pred = src.read(1)
 
@@ -312,29 +318,41 @@ def error_rate_patch(truth_file: str, out_dir: str, pred_file: str) -> None:
         target_patch = target[bottom:top, left:right]
         pred_patch = pred[bottom:top, left:right]
 
-        # compute the error rate
-        # for each pixel, increment if not equal
+        # compute the error rate : for each pixel, increment if different
         # hard error rate
         # replace / evaluate soft confidence
         out_array += np.where(target_patch != pred_patch, 1, 0)
 
     out_array = out_array / len(patches)
 
-    # i'm afraid of the memory
-
     out_path = Path(out_dir)
     out_path.mkdir(parents=True, exist_ok=True)
     out_path = out_path / f"error_rate_{full_method}_{datetime.datetime.now()}.png"
 
+    # better visualization
+    from scipy.ndimage import gaussian_filter
+
+    out_array = gaussian_filter(out_array, sigma=2)
+
     # save the error rate as a png
+    autoscale = True
+    if autoscale:
+        vmin = np.min(out_array)
+        vmax = np.max(out_array)
+    else:
+        vmin = 0.025
+        vmax = 0.25
+
     plt.figure(figsize=(10, 10))
     plt.axis("off")
-    plt.imshow(out_array, cmap="hot", interpolation="nearest", vmin=0.025, vmax=0.25)
+    plt.imshow(out_array, cmap="plasma", interpolation="nearest", vmin=vmin, vmax=vmax)
     plt.colorbar()
     plt.title("Error Rate for method : \n" + full_method)
     plt.savefig(str(out_path))
     plt.close()
     print(f"Error rate saved to {out_path}")
+
+    return out_array
 
 
 #### ANALYSIS ####

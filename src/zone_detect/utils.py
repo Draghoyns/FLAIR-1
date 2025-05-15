@@ -25,22 +25,17 @@ def preprocess_config(config: dict) -> dict:
     """Clean the config file by formatting correctly
     and raising obvious errors before any run."""
 
-    compare = config["compare"]
-
     # paths
     # check existence
-    assert os.path.exists(config["output_path"]), "Output path does not exist."
+    Path(config["output_path"]).mkdir(parents=True, exist_ok=True)
     assert os.path.exists(config["input_img_path"]), "Input image path does not exist."
     config["input_img_path"] = Path(config["input_img_path"]).with_suffix(".tif")
 
-    if compare:
-        assert os.path.exists(
-            config["metrics_out"]
-        ), "Output metrics path does not exist."
+    if config["metrics"]:
+        config["metrics_out"] = config["output_path"] + "/metrics.json"
         assert os.path.exists(config["truth_path"]), "Ground truth path does not exist."
 
         config["truth_path"] = Path(config["truth_path"]).with_suffix(".tif")
-        config["metrics_out"] = Path(config["metrics_out"]).with_suffix(".json")
 
     # channels
     assert isinstance(config["channels"], list) and all(
@@ -73,7 +68,7 @@ def preprocess_config(config: dict) -> dict:
             f"Got {os.path.splitext(config['model_weights'])[1]}"
         )
 
-    if compare:
+    if config["compare"]:
 
         config["strategies"]["tiling"]["size_range"] = check_list_type(
             config["strategies"]["tiling"]["size_range"], int
@@ -218,6 +213,8 @@ def setup_out_path(config: dict) -> dict:
         child_dir = os.path.join(config["output_path"], current_time)
         os.makedirs(child_dir, exist_ok=True)
         config["local_out"] = child_dir
+    else:
+        config["local_out"] = config["output_path"]
 
     return config
 
@@ -240,7 +237,7 @@ def setup(args) -> tuple[dict, torch.device, bool]:
     return config, device, use_gpu
 
 
-def setup_indiv_path(config: dict, identifier: str = "") -> tuple[dict, str]:
+def setup_indiv_path(config: dict, identifier: str) -> tuple[dict, str]:
     """Setup the output path for individual images"""
 
     out_name = config["output_name"] + identifier

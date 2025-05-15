@@ -134,7 +134,7 @@ def prepare_tiles(
 
 def prepare_data(
     config: dict, stride: int
-) -> tuple[DataLoader, GeoDataFrame, dict, tuple]:
+) -> tuple[Sliced_Dataset, DataLoader, GeoDataFrame, dict, tuple]:
 
     channels = config["channels"]
     norma_task = config["norma_task"]
@@ -164,7 +164,7 @@ def prepare_data(
         pin_memory=True,
     )
 
-    return data_loader, sliced_dataframe, profile, resolution
+    return dataset, data_loader, sliced_dataframe, profile, resolution
 
 
 def prepare_model(config: dict, device: torch.device) -> torch.nn.Module:
@@ -190,10 +190,11 @@ def prepare_model(config: dict, device: torch.device) -> torch.nn.Module:
 def prepare_output(
     config: dict,
     profile: dict,
+    identifier: str = "",
 ) -> tuple[rasterio.io.DatasetWriter, str]:  # type: ignore
     """Prepare output raster profile and output path"""
 
-    config, path_out = setup_indiv_path(config)
+    config, path_out = setup_indiv_path(config, identifier)
     output_type = config["output_type"]
     n_classes = config["n_classes"]
 
@@ -262,18 +263,18 @@ def run_pipeline(config: dict, device: torch.device, use_gpu: bool) -> None:
 
             method = f"size={img_pixels_detection}_stride={stride}_margin={margin}_padding={padding}_stitching={stitch}"
             identifier = "_" + method
-            config, path_out = setup_indiv_path(config, identifier)
 
             # start timer
             start_time = datetime.datetime.now()
 
-            data_loader, sliced_dataframe, profile, resolution = prepare_data(
+            dataset, data_loader, sliced_dataframe, profile, resolution = prepare_data(
                 config, stride
             )
             # prepare output raster
             out, path_out = prepare_output(
                 config,
                 profile,
+                identifier,
             )
             print(f"""    [ ] starting inference...\n""")
             for samples in tqdm(data_loader):
@@ -309,19 +310,22 @@ def run_pipeline(config: dict, device: torch.device, use_gpu: bool) -> None:
                             window=window,
                         )
 
-                    # compute metrics
-                    inference_time = datetime.datetime.now() - start_time
-                    inference_time = inference_time.total_seconds()
-                    if method not in method_times:
-                        method_times[method] = [inference_time]
-                    else:
-                        method_times[method].append(inference_time)
+                    if config["metrics"]:
+                        # compute metrics
+                        inference_time = datetime.datetime.now() - start_time
+                        inference_time = inference_time.total_seconds()
+                        if method not in method_times:
+                            method_times[method] = [inference_time]
+                        else:
+                            method_times[method].append(inference_time)
 
-                    compute_metrics_patch(
-                        prediction, window, config, method, metrics_json
-                    )
+                        compute_metrics_patch(
+                            prediction, window, config, method, metrics_json
+                        )
 
             out.close()
+            dataset.close_raster()  # type: ignore
+
             print(
                 f"""    [X] done writing to {path_out.split('/')[-1]} raster file.\n"""
             )
@@ -329,14 +333,15 @@ def run_pipeline(config: dict, device: torch.device, use_gpu: bool) -> None:
                 f"""    [X] done writing metrics to {metrics_json.split('/')[-1]} file.\n"""
             )
 
-            config["times"] = method_times
+            if config["metrics"]:
+                config["times"] = method_times
 
     else:
 
         # default configuration : exact clipping and default sized tiling
 
         stride = get_stride(config)[0]
-        data_loader, sliced_dataframe, profile, resolution = prepare_data(
+        dataset, data_loader, sliced_dataframe, profile, resolution = prepare_data(
             config, stride
         )
 

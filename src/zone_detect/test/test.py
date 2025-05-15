@@ -5,6 +5,7 @@ import rasterio
 
 from src.zone_detect.test.metrics import *
 from src.zone_detect.utils import read_config
+from src.zone_detect.test.tests import *
 
 
 def geogr_patches(
@@ -144,9 +145,6 @@ if __name__ == "__main__":
     stride = 2
     query = (0, 5, 0, 5)
 
-    # read config
-    config = read_config(config)
-
     """# prediction files
     # get a folder inside output_path
     list_preds = []
@@ -162,7 +160,7 @@ if __name__ == "__main__":
             continue
         list_preds.append(pred)"""
 
-    # metrics analysis
+    """# metrics analysis
 
     metrics_path = config["metrics_out"]
 
@@ -173,3 +171,14 @@ if __name__ == "__main__":
     metrics = ["mIoU", "Overall Accuracy", "Fscore"]
 
     plot_metrics(analyze_param(df, param, metrics[0]), param, metrics[0])
+"""
+
+    # test error rate on margin 0
+
+    truth = "/media/DATA/INFERENCE_HS/DATA/dataset_zone_last/labels_raster/FLAIR_19/D037_2021/UU_S1_4/D037_2021-UU_S1_4-MSK_FLAIR19-LABEL.tif"
+
+    out_dir = "/media/DATA/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out20250515"
+
+    pred = "/media/DATA/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out202505512/20250512_155812/037_2021_UU_S1_4_IRC-ARGMAX-S_size=2048_stride=1920_margin=64_padding=no-padding_stitching=exact-clipping.tif"
+
+    error_rate_patch(truth, out_dir, pred)

@@ -1,12 +1,12 @@
 # THIS IS NOT FOR CUSTOM STRATEGIES FOR ONE INFERENCE
 # command : 
-#flair-detect --conf=/media/DATA/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/config_detect_compare_metrics.yaml --comp=True
+#flair-detect --conf=/media/DATA/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/config_detect_compare_metrics.yaml --compare
 
 #### OUTPUT
 output_path:
-  /media/DATA/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out202505512
+ /media/DATA/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out20250515
 output_name: 037_2021_UU_S1_4_IRC-ARGMAX-S # stem
-metrics_out: /media/DATA/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out20250506/metrics.json # JSON; None = new file
+metrics_out: # updated during computation
 output_type: "argmax" # prediction type
 
 #### INPUT AND GROUND TRUTH
@@ -18,14 +18,14 @@ truth_root: /media/DATA/INFERENCE_HS/DATA/dataset_zone_last/labels_raster/FLAIR_
 truth_path : /media/DATA/INFERENCE_HS/DATA/dataset_zone_last/labels_raster/FLAIR_19/D037_2021/UU_S1_4/D037_2021-UU_S1_4-MSK_FLAIR19-LABEL.tif
 
 #### PARAMETERS
-channels: [1, 2, 3]
+channels: [1, 2, 3, ] 
 img_pixels_detection: 512 # best for swin
 margin: 0 # for clipping, in percentage of the tile size
 
 #### MODEL
 model_weights: /media/DATA/INFERENCE_HS/MODELS_IA/FLAIR1/swin-upernet-small_IRV_SET1/checkpoints/ckpt-epoch=84-val_loss=0.37_00_HF_SwinUpernet_Small_IR-R-G_set1.ckpt
 model_framework: 
-    model_provider: HuggingFace
+    model_provider: HuggingFace 
     
     HuggingFace:
         org_model: openmmlab/upernet-swin-small
@@ -36,7 +36,7 @@ model_name: upernet-swin-small
 encoder_name: swin-small
 
 batch_size: 1 # for DataLoader
-use_gpu: true
+use_gpu: True
 num_worker: 8
 
 write_dataframe: False
@@ -48,7 +48,7 @@ norma_task:
   norm_stds: [39.69, 52.17, 45.38]
 
 #### COMPARISON PARAMETERS
-  # only if --comp=true when calling flair-detect
+  # only if --compare when calling flair-detect
 
 # used to ensure coherence between tiling and stitching parameters
 overlap_strat : False # for exact clipping, True if overlap is handled
