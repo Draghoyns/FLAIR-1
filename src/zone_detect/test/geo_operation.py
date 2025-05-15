@@ -13,9 +13,9 @@ def create_box_from_bounds(
 
 
 def slice_geo(
-    in_img: str | Path,
+    in_img: Path,
     margin: int,
-    output_path: str | Path,
+    output_path: Path,
     output_name: str,
     write_dataframe: bool,
     patches: list[tuple[int, int, int, int]],

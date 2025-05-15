@@ -163,13 +163,14 @@ def gen_param_combination(config: dict) -> list:
     return combi
 
 
-def info_extract(filename: str) -> dict:
+def info_extract(file: Path) -> dict:
     """Extract the information from the filename, namely the region and the method used.
     Args:
-        filename (str): the filename to extract the information from. Should be full path.
+        filename (Path): the filename to extract the information from. Should be full path.
     Returns:
         dict: with the keys [dpt, zone, patch_size, stride, margin, padding, stitching] and other if they exist.
     """
+    filename = str(file)
 
     if not filename.endswith(".tif"):
         raise ValueError("Filename should end with .tif what are you doing ?")
@@ -200,6 +201,20 @@ def info_extract(filename: str) -> dict:
             info[param[0]] = param[1]
 
     return info
+
+
+def get_truth_path(pred_path: Path, truth_dir: Path) -> Path:
+    zone_name = info_extract(pred_path)["zone"]
+
+    # corresponding ground truth
+    # we consider gt_folder the dpt folder
+    truth_subdir = truth_dir / zone_name
+    truth_path = next(truth_subdir.glob("*.tif"), None)
+    if truth_path is None:
+        raise FileNotFoundError(
+            f"Ground truth file not found in {truth_subdir}. Please check the folder."
+        )
+    return truth_path
 
 
 #### SETUP ####

@@ -11,7 +11,7 @@ from sklearn.metrics import confusion_matrix
 from tqdm import tqdm
 
 from src.zone_detect.test.pixel_operation import slice_pixels
-from src.zone_detect.utils import info_extract
+from src.zone_detect.utils import get_truth_path, info_extract
 
 
 #### UTILS ####
@@ -44,24 +44,18 @@ def valid_truth(config: dict) -> Path:
     return Path(truth_path)
 
 
-def collect_paths_truth(config: dict, gt_dir: str) -> pd.DataFrame:
+def collect_paths_truth(config: dict, truth_dir: Path) -> pd.DataFrame:
     path_collection = []
-    gt_folder = Path(gt_dir)
 
     # get predictions
-    pred_folder = Path(config["output_path"])
-    timed_folders = [p for p in pred_folder.iterdir() if p.is_dir()]
+    pred_dir = Path(config["output_path"])
+    timed_folders = [p for p in pred_dir.iterdir() if p.is_dir()]
 
     # dataframe with pred path, gt path and method single string
     for timestamp in sorted(timed_folders):
         pred_files = list(timestamp.rglob("*.tif"))
 
-        zone_name = info_extract(str(pred_files[0]))["zone"]
-
-        # corresponding ground truth
-        # we consider gt_folder the dpt folder
-        gt_subfolder = gt_folder / zone_name
-        gt_path = next(gt_subfolder.glob("*.tif"), None)
+        truth_path = get_truth_path(pred_files[0], truth_dir)
 
         for pred_path in pred_files:
             method_id = Path(pred_path.name.split("IRC-ARGMAX-S_")[1]).stem
@@ -69,7 +63,7 @@ def collect_paths_truth(config: dict, gt_dir: str) -> pd.DataFrame:
             path_collection.append(
                 {
                     "pred_path": str(pred_path),
-                    "gt_path": str(gt_path),
+                    "truth_path": str(truth_path),
                     "method": method_id,
                 }
             )
@@ -178,9 +172,9 @@ def compute_metrics_patch(
         f.write("\n")
 
 
-def batch_metrics(config: dict, gt_dir: str) -> list:
+def batch_metrics(config: dict, truth_dir: Path) -> list:
     metrics_file = []
-    df = collect_paths_truth(config, gt_dir)
+    df = collect_paths_truth(config, truth_dir)
 
     grouped = df.groupby("method")
 
@@ -188,15 +182,15 @@ def batch_metrics(config: dict, gt_dir: str) -> list:
     for method, group in tqdm(grouped, desc="Computing metrics"):
 
         pred_paths = group["pred_path"].tolist()
-        gt_paths = group["gt_path"].tolist()
+        gt_paths = group["truth_path"].tolist()
 
         patch_confusion_matrices = []
-        for pred_path, gt_path in zip(pred_paths, gt_paths):
+        for pred_path, truth_path in zip(pred_paths, gt_paths):
             try:
                 # loading
                 with rasterio.open(pred_path) as src:
                     preds = src.read(1)
-                with rasterio.open(gt_path) as src:
+                with rasterio.open(truth_path) as src:
                     target = src.read(1) - 1
 
                 patch_confusion_matrices.append(
@@ -207,7 +201,7 @@ def batch_metrics(config: dict, gt_dir: str) -> list:
                     )
                 )
             except Exception as e:
-                print(f"Error processing {pred_path} and {gt_path}: {e}")
+                print(f"Error processing {pred_path} and {truth_path}: {e}")
 
         # compute metrics for the group
         sum_confmat = np.sum(patch_confusion_matrices, axis=0)
@@ -222,7 +216,7 @@ def batch_metrics(config: dict, gt_dir: str) -> list:
             avg_time = np.mean(config["times"][method])
 
         # method parameters
-        info = info_extract("/" + str(method) + ".tif")
+        info = info_extract(Path("/" + str(method) + ".tif"))
         patch_size = info["patch_size"]
         stride = info["stride"]
         margin = info["margin"]
@@ -264,16 +258,36 @@ def batch_metrics(config: dict, gt_dir: str) -> list:
     return metrics_file
 
 
+def error_rate_loop(truth_dir: Path, out_dir: Path, pred_dir: Path) -> None:
+    # TODO
+    save = True
+    dic = {}
+
+    for pred_path in pred_dir.iterdir():
+
+        # get corresponding truth file
+        truth_file = get_truth_path(pred_path, truth_dir)
+
+        dic = error_rate_patch(
+            truth_file=truth_file,
+            out_dir=out_dir,
+            pred_path=pred_path,
+            dic={},
+            save=save,
+        )
+
+
 # not incorporated in the pipeline, but maybe as option ?
-def error_rate_patch(truth_file: str, out_dir: str, pred_file: str) -> np.ndarray:
+def error_rate_patch(
+    truth_file: Path, out_dir: Path, pred_path: Path, dic: dict, save: bool
+) -> dict[str, np.ndarray]:
     """Compute the error rate per patch for a given input.
     You need to provide full paths
     """
 
     # slice prediction parameters
-    pred_path = Path(pred_file)
 
-    file_info = info_extract(pred_file)
+    file_info = info_extract(pred_path)
     dpt, zone = file_info["dpt"], file_info["zone"]
     patch_size, stride, margin = (
         file_info["patch_size"],
@@ -281,7 +295,9 @@ def error_rate_patch(truth_file: str, out_dir: str, pred_file: str) -> np.ndarra
         file_info["margin"],
     )
 
-    full_method = pred_file.split("/")[-1].split("_IRC-ARGMAX-S_")[1].split(".tif")[0]
+    full_method = (
+        str(pred_path).split("/")[-1].split("_IRC-ARGMAX-S_")[1].split(".tif")[0]
+    )
 
     region_check = f"{dpt}/{zone}/himom.tif"
 
@@ -335,28 +351,32 @@ def error_rate_patch(truth_file: str, out_dir: str, pred_file: str) -> np.ndarra
     out_array = gaussian_filter(out_array, sigma=2)
 
     # save the error rate as a png
-    autoscale = True
+    autoscale = False
     if autoscale:
         vmin = np.min(out_array)
         vmax = np.max(out_array)
     else:
         vmin = 0.025
         vmax = 0.25
+    if save:
+        plt.figure(figsize=(10, 10))
+        plt.axis("off")
+        plt.imshow(
+            out_array, cmap="plasma", interpolation="nearest", vmin=vmin, vmax=vmax
+        )
+        plt.colorbar()
+        plt.title("Error Rate for method : \n" + full_method)
+        plt.savefig(str(out_path))
+        plt.close()
+        print(f"Error rate saved to {out_path}")
 
-    plt.figure(figsize=(10, 10))
-    plt.axis("off")
-    plt.imshow(out_array, cmap="plasma", interpolation="nearest", vmin=vmin, vmax=vmax)
-    plt.colorbar()
-    plt.title("Error Rate for method : \n" + full_method)
-    plt.savefig(str(out_path))
-    plt.close()
-    print(f"Error rate saved to {out_path}")
+    dic[pred_path] = out_array
 
-    return out_array
+    return dic
 
 
 #### ANALYSIS ####
-def load_metrics_json(json_path: str) -> dict:
+def load_metrics_json(json_path: Path) -> dict:
     with open(json_path, "r") as f:
         data = json.load(f)
     return data

@@ -179,6 +179,14 @@ if __name__ == "__main__":
 
     out_dir = "/media/DATA/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out20250515"
 
-    pred = "/media/DATA/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out202505512/20250512_155812/037_2021_UU_S1_4_IRC-ARGMAX-S_size=2048_stride=1920_margin=64_padding=no-padding_stitching=exact-clipping.tif"
+    pred_dir = "/media/DATA/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out20250514/20250514_174851_margin=0"
 
-    error_rate_patch(truth, out_dir, pred)
+    for pred in Path(pred_dir).iterdir():
+        if not pred.is_file() or not pred.name.endswith(".tif"):
+            continue
+
+        # test error rate
+        # error_rate(truth, out_dir, pred)
+        # test error rate on patch
+
+        error_rate(truth, out_dir, pred)

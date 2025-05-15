@@ -1,10 +1,11 @@
 # testing all sorts of functions for my own sanity
 
+from pathlib import Path
 import numpy as np
 from src.zone_detect.test.metrics import error_rate_patch
 
 
-def test_error_rate(img_path: str, out_dir: str, verbose: bool = False) -> None:
+def test_error_rate(img_path: Path, out_dir: Path, verbose: bool = False) -> None:
 
     # for two identical images, the error rate should be 0 everywhere
 
@@ -13,7 +14,8 @@ def test_error_rate(img_path: str, out_dir: str, verbose: bool = False) -> None:
     - Testing identical images"""
     )
 
-    error = error_rate_patch(img_path, out_dir, img_path)
+    error = error_rate_patch(img_path, out_dir, img_path, dic={}, save=True)
+    error = error["img_path"]
 
     if not np.any(error):
         print("     [x] OK")

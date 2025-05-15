@@ -17,10 +17,10 @@ def create_polygon_from_bounds(
 
 
 def slice_extent(
-    in_img: str | Path,
+    in_img: Path,
     patch_size: int,
     margin: int,
-    output_path: str | Path,
+    output_path: Path,
     output_name: str,
     write_dataframe: bool,
     stride: int,
@@ -125,10 +125,10 @@ def slice_extent(
 
 
 def slice_extent_separate(
-    in_img: str | Path,
+    in_img: Path,
     patch_size: int,
     margin: int,
-    output_path: str | Path,
+    output_path: Path,
     output_name: str,
     write_dataframe: bool,
     stride: int,

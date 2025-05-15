@@ -117,11 +117,11 @@ def prepare_tiles(
 ) -> tuple[GeoDataFrame, dict, tuple]:
     ## slicing extent for overlapping detection
     sliced_dataframe, profile, resolution, img_size = slice_extent(
-        in_img=config["input_img_path"],
+        in_img=Path(config["input_img_path"]),
         patch_size=config["img_pixels_detection"],
         margin=config["margin"],
         output_name=config["output_name"],
-        output_path=config["local_out"],
+        output_path=Path(config["local_out"]),
         write_dataframe=config["write_dataframe"],
         stride=stride,
     )
@@ -393,7 +393,7 @@ def run_pipeline(config: dict, device: torch.device, use_gpu: bool) -> None:
     sys.stdout = sys.__stdout__
 
 
-def batch_metrics_pipeline(config: dict, gt_dpt: str) -> None:
+def batch_metrics_pipeline(config: dict, gt_dpt: Path) -> None:
     """
     Compute metrics for a batch of images.
     Args:
@@ -419,11 +419,11 @@ def batch_metrics_pipeline(config: dict, gt_dpt: str) -> None:
             continue
 
         dpt, zone = str(irc_path).split("/")[-3:-1]
-        gt_path = str(gt_dpt) + "/" + zone + "/"
-        gt_path = next(Path(gt_path).glob("*.tif"), None)
+        truth_path = os.path.join(gt_dpt, zone)
+        truth_path = next(Path(truth_path).glob("*.tif"), None)
 
-        config["input_img_path"] = str(irc_path)
-        config["truth_path"] = str(gt_path)
+        config["input_img_path"] = irc_path
+        config["truth_path"] = truth_path
         config["output_name"] = str(irc_path).split("/")[-1].split(".")[0] + "-ARGMAX-S"
 
         # Inference and saving the predictions
@@ -456,7 +456,7 @@ def main():
         gt_dir = config["truth_root"]
         gt_dpt = gt_dir + "/" + config["truth_path"].split("/")[-3]
 
-        batch_metrics_pipeline(config, gt_dpt)
+        batch_metrics_pipeline(config, Path(gt_dpt))
     else:
         run_pipeline(config, device, use_gpu)
 
