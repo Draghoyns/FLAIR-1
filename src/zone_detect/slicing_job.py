@@ -29,55 +29,49 @@ def slice_extent(
     with rasterio.open(in_img) as src:
         img_width, img_height = src.read(1).shape
         profile = src.profile
-        left_overall, bottom_overall, right_overall, top_overall = src.bounds
-        resolution = abs(round(src.res[0], 5)), abs(round(src.res[1], 5))
+        min_x, min_y, max_x, max_y = src.bounds
+        resolution_x, resolution_y = map(lambda r: abs(round(r, 5)), src.res)
 
     # geo conversion
-    geo_output_size = [patch_size * resolution[0], patch_size * resolution[1]]
-    geo_margin = [margin * resolution[0], margin * resolution[1]]
+    geo_output_w, geo_output_h = patch_size * resolution_x, patch_size * resolution_y
+    geo_margin_x, geo_margin_y = margin * resolution_x, margin * resolution_y
 
     if stride:
-        geo_step = [stride * resolution[0], stride * resolution[1]]
+        geo_step = [stride * resolution_x, stride * resolution_y]
     else:  # default
         geo_step = [
-            geo_output_size[0] - (2 * geo_margin[0]),
-            geo_output_size[1] - (2 * geo_margin[1]),
+            geo_output_w - (2 * geo_margin_x),
+            geo_output_h - (2 * geo_margin_y),
         ]
-
-    min_x, min_y = left_overall, bottom_overall
-    max_x, max_y = right_overall, top_overall
 
     # initializing
     tmp_list = []
     geo_patches = set()  # To track unique patches
 
-    X = np.arange(min_x - geo_margin[0], max_x + geo_margin[0], geo_step[0])
-    Y = np.arange(min_y - geo_margin[1], max_y + geo_margin[1], geo_step[1])
+    X = np.arange(min_x - geo_margin_x, max_x + geo_margin_x, geo_step[0])
+    Y = np.arange(min_y - geo_margin_y, max_y + geo_margin_y, geo_step[1])
 
     for x_coord in X:
-        for y_coord in Y:
-            # for each patch
 
-            # Adjust last column to ensure proper alignment
-            if x_coord + geo_output_size[0] > max_x + geo_margin[0]:
-                x_coord = max_x + geo_margin[0] - geo_output_size[0]
+        # Adjust last column to ensure proper alignment
+        if x_coord + geo_output_w > max_x + geo_margin_x:
+            x_coord = max_x + geo_margin_x - geo_output_w
+
+        for y_coord in Y:
             # Adjust last row
-            if y_coord + geo_output_size[1] > max_y + geo_margin[1]:
-                y_coord = max_y + geo_margin[1] - geo_output_size[1]
+            if y_coord + geo_output_h > max_y + geo_margin_y:
+                y_coord = max_y + geo_margin_y - geo_output_h
 
             # Define patch boundaries, geo, absolute position
-            left = x_coord + geo_margin[0]
-            right = x_coord + geo_output_size[0] - geo_margin[0]
-            bottom = y_coord + geo_margin[1]
-            top = y_coord + geo_output_size[1] - geo_margin[1]
-
             # Ensure patches don't go outside raster bounds
-            right = min(right, max_x)
-            top = min(top, max_y)
+            left = x_coord + geo_margin_x
+            right = min(x_coord + geo_output_w - geo_margin_x, max_x)
+            bottom = y_coord + geo_margin_y
+            top = min(y_coord + geo_output_h - geo_margin_y, max_y)
 
             col, row = (
-                int((y_coord - min_y) // resolution[0]) + 1,
-                int((x_coord - min_x) // resolution[1]) + 1,
+                int((y_coord - min_y) // resolution_x) + 1,
+                int((x_coord - min_x) // resolution_y) + 1,
             )
 
             # Unique identifier for patch
@@ -98,15 +92,15 @@ def slice_extent(
                     "bottom": bottom,
                     "right": right,
                     "top": top,
-                    "left_o": left_overall,
-                    "bottom_o": bottom_overall,
-                    "right_o": right_overall,
-                    "top_o": top_overall,
+                    "left_o": min_x,
+                    "bottom_o": min_y,
+                    "right_o": max_x,
+                    "top_o": max_y,
                     "geometry": create_box_from_bounds(
                         x_coord,
-                        x_coord + geo_output_size[0],
+                        x_coord + geo_output_w,
                         y_coord,
-                        y_coord + geo_output_size[1],
+                        y_coord + geo_output_h,
                     ),
                 }
                 tmp_list.append(row_d)
@@ -121,7 +115,7 @@ def slice_extent(
             driver="GPKG",
         )
 
-    return gdf_output, profile, resolution, [img_width, img_height]
+    return gdf_output, profile, (resolution_x, resolution_y), [img_width, img_height]
 
 
 def slice_extent_separate(

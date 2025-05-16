@@ -175,18 +175,15 @@ if __name__ == "__main__":
 
     # test error rate on margin 0
 
-    truth = "/media/DATA/INFERENCE_HS/DATA/dataset_zone_last/labels_raster/FLAIR_19/D037_2021/UU_S1_4/D037_2021-UU_S1_4-MSK_FLAIR19-LABEL.tif"
+    truth = "/media/DATA/INFERENCE_HS/DATA/dataset_zone_last/labels_raster/FLAIR_19/D037_2021"
 
-    out_dir = "/media/DATA/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out20250515"
+    out_dir = "/media/DATA/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out20250515/batch_error"
 
-    pred_dir = "/media/DATA/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out20250514/20250514_174851_margin=0"
+    pred_dir = "/media/DATA/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out20250512"
+    # "/media/DATA/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out20250514/20250514_174851_margin=0"
 
-    for pred in Path(pred_dir).iterdir():
-        if not pred.is_file() or not pred.name.endswith(".tif"):
-            continue
+    # test error rate
+    # error_rate(truth, out_dir, pred)
+    # test error rate on patch
 
-        # test error rate
-        # error_rate(truth, out_dir, pred)
-        # test error rate on patch
-
-        dic = error_rate_loop(Path(truth), Path(out_dir), pred)
+    error_rate_loop(Path(truth), Path(out_dir), Path(pred_dir))

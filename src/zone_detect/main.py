@@ -1,8 +1,9 @@
 import json
 from pathlib import Path
-import os, sys
+import sys
 import datetime
 import warnings
+import numpy as np
 import rasterio
 import argparse
 from tqdm import tqdm
@@ -68,26 +69,32 @@ def conf_log(
     img_size: list[int],
 ) -> None:
     # Determine model template info based on provider
-    provider = config["model_framework"]["model_provider"]
+    mf = config["model_framework"]
+    provider = mf["model_provider"]
     if provider == "HuggingFace":
-        model_template = (
-            f"{provider} - {config['model_framework']['HuggingFace']['org_model']}"
-        )
+        model_template = f"{provider} - {mf['HuggingFace']['org_model']}"
     elif provider == "SegmentationModelsPytorch":
-        model_template = f"{provider} - {config['model_framework']['SegmentationModelsPytorch']['encoder_decoder']}"
+        model_template = (
+            f"{provider} - {mf['SegmentationModelsPytorch']['encoder_decoder']}"
+        )
     else:
         model_template = provider  # fallback if unknown
 
     compare_handling = "strategies" in config
+    compare = config["compare"]
+    strategies = config["strategies"]
 
-    compare_param = f"""
+    if compare:
+        compare_param = f"""
     |- overlapping strategy: {"handled" if compare_handling  else "exact"}
-    |- tiling comparison: {"yes" if (compare_handling and config['strategies']['tiling']['enabled']) else "no"}
-    |- stitching comparison: {"no" if not compare_handling else config['strategies']['stitching']['method']}
-    |- padding: {"not handled" if not compare_handling else config["strategies"]['padding_overall']} \n """
+    |- tiling comparison: {"yes" if (compare_handling and strategies['tiling']['enabled']) else "no"}
+    |- stitching comparison: {"no" if not compare_handling else strategies['stitching']['method']}
+    |- padding: {"not handled" if not compare_handling else strategies['padding_overall']} \n """
+    else:
+        compare_param = ""
 
-    print("    [ ] no comparison" if not config["compare"] else "    [x] comparison")
-    print(
+    print("    [ ] no comparison" if not compare else "    [x] comparison")
+    log = [
         f"""
     |- output path: {config['output_path']}
     |- output raster name: {config['output_name']}
@@ -105,24 +112,31 @@ def conf_log(
     |- model template: {model_template}
     |- device: {"cuda" if config['use_gpu'] else "cpu"}
     |- batch size: {config['batch_size']}
-    {compare_param if config["compare"] else ""}
     """
-    )
+    ]
+    print("\n".join(log + [compare_param]))
 
 
 # __________Prepare objects___________#
 def prepare_tiles(
     config: dict,
     stride: int,
-) -> tuple[GeoDataFrame, dict, tuple]:
-    ## slicing extent for overlapping detection
+) -> tuple[GeoDataFrame, dict, tuple[float, float]]:
+    """Slicing extent for overlapping detection"""
+    input_path = Path(config["input_img_path"])
+    patch_size = config["img_pixels_detection"]
+    margin = config["margin"]
+    output_name = config["output_name"]
+    output_path = Path(config["local_out"])
+    write_df = config["write_dataframe"]
+
     sliced_dataframe, profile, resolution, img_size = slice_extent(
-        in_img=Path(config["input_img_path"]),
-        patch_size=config["img_pixels_detection"],
-        margin=config["margin"],
-        output_name=config["output_name"],
-        output_path=Path(config["local_out"]),
-        write_dataframe=config["write_dataframe"],
+        in_img=input_path,
+        patch_size=patch_size,
+        margin=margin,
+        output_name=output_name,
+        output_path=output_path,
+        write_dataframe=write_df,
         stride=stride,
     )
     ## log
@@ -134,7 +148,7 @@ def prepare_tiles(
 
 def prepare_data(
     config: dict, stride: int
-) -> tuple[Sliced_Dataset, DataLoader, GeoDataFrame, dict, tuple]:
+) -> tuple[Sliced_Dataset, DataLoader, GeoDataFrame, dict]:
 
     channels = config["channels"]
     norma_task = config["norma_task"]
@@ -164,7 +178,7 @@ def prepare_data(
         pin_memory=True,
     )
 
-    return dataset, data_loader, sliced_dataframe, profile, resolution
+    return dataset, data_loader, sliced_dataframe, profile
 
 
 def prepare_model(config: dict, device: torch.device) -> torch.nn.Module:
@@ -221,39 +235,58 @@ def run_from_config(config: dict) -> None:
     """Run the pipeline from a config file"""
     # setting up device and log
     device, use_gpu = setup_device(config)
-    config = setup_out_path(config)
 
     run_pipeline(config, device, use_gpu)
 
 
 def run_pipeline(config: dict, device: torch.device, use_gpu: bool) -> None:
+    """Works for a single input image"""
+
+    # set up common output path
+    config = setup_out_path(config)
 
     # extracting config parameters
     output_type = config["output_type"]
     n_classes = config["n_classes"]
+    compare = config["compare"]
+    local_out = Path(config["local_out"])
+    compute_metrics = config["metrics"]
 
     # log
-    log_filename = os.path.join(
-        config["local_out"],
+    log_filename = local_out / Path(
         f"{config['output_name']}_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.log",
     )
-    sys.stdout = Logger(filename=log_filename)
+    sys.stdout = Logger(filename=str(log_filename))
     sys.stderr = sys.stdout
     print(f"    [LOGGER] Writing logs to: {log_filename}")
 
+    # model
     model = prepare_model(config, device)
 
-    if config["compare"]:
+    # set truth path
 
-        method_times = {}
+    if compute_metrics:
+        full_truth_path = Path(config["truth_path"])
+        with rasterio.open(full_truth_path) as src:
+            truth_array = src.read(1) - 1  # to start from 0
 
         # common to a zone (= one tif image)
-        metrics_json = config["local_out"] + "/metrics_per-patch_final.json"
+        dpt, zone = Path(config["input_img_path"]).parts[-3:-1]
+        metrics_json = local_out / Path(f"metrics_per-patch_{dpt}_{zone}.json")
+    else:
+        truth_array = np.zeros((1, 1), dtype=np.uint8)
+        metrics_json = Path()
+
+    if compare:
+
+        method_times = {}
 
         print(f"""    [ ] starting comparison...\n""")
 
         settings = gen_param_combination(config)
         for combi in settings:
+
+            method_metrics = []
 
             img_pixels_detection = combi["img_pixels_detection"]
             margin = combi["margin"]
@@ -267,7 +300,7 @@ def run_pipeline(config: dict, device: torch.device, use_gpu: bool) -> None:
             # start timer
             start_time = datetime.datetime.now()
 
-            dataset, data_loader, sliced_dataframe, profile, resolution = prepare_data(
+            dataset, data_loader, sliced_dataframe, profile = prepare_data(
                 config, stride
             )
             # prepare output raster
@@ -298,7 +331,6 @@ def run_pipeline(config: dict, device: torch.device, use_gpu: bool) -> None:
                         out,
                         stitch,
                         stride,
-                        resolution,
                     )
                     # write
                     if output_type == "argmax":
@@ -310,8 +342,8 @@ def run_pipeline(config: dict, device: torch.device, use_gpu: bool) -> None:
                             window=window,
                         )
 
-                    if config["metrics"]:
-                        # compute metrics
+                    if compute_metrics:
+                        # compute metrics per patch
                         inference_time = datetime.datetime.now() - start_time
                         inference_time = inference_time.total_seconds()
                         if method not in method_times:
@@ -319,8 +351,14 @@ def run_pipeline(config: dict, device: torch.device, use_gpu: bool) -> None:
                         else:
                             method_times[method].append(inference_time)
 
-                        compute_metrics_patch(
-                            prediction, window, config, method, metrics_json
+                        method_metrics.append(
+                            compute_metrics_patch(
+                                prediction,
+                                truth_array,
+                                window,
+                                config,
+                                method,
+                            )
                         )
 
             out.close()
@@ -329,21 +367,22 @@ def run_pipeline(config: dict, device: torch.device, use_gpu: bool) -> None:
             print(
                 f"""    [X] done writing to {path_out.split('/')[-1]} raster file.\n"""
             )
-            print(
-                f"""    [X] done writing metrics to {metrics_json.split('/')[-1]} file.\n"""
-            )
 
-            if config["metrics"]:
+            if compute_metrics:
                 config["times"] = method_times
+                print(
+                    f"""    [X] done writing metrics to {metrics_json.name} file.\n"""
+                )
+
+                with open(metrics_json, "w") as f:
+                    json.dump(method_metrics, f, indent=2)
 
     else:
 
         # default configuration : exact clipping and default sized tiling
 
         stride = get_stride(config)[0]
-        dataset, data_loader, sliced_dataframe, profile, resolution = prepare_data(
-            config, stride
-        )
+        dataset, data_loader, sliced_dataframe, profile = prepare_data(config, stride)
 
         # prepare output raster
         out, path_out = prepare_output(config, profile)
@@ -371,7 +410,6 @@ def run_pipeline(config: dict, device: torch.device, use_gpu: bool) -> None:
                     out,
                     "exact-clipping",
                     stride,
-                    resolution,
                 )
                 # write
                 if output_type == "argmax":
@@ -393,47 +431,54 @@ def run_pipeline(config: dict, device: torch.device, use_gpu: bool) -> None:
     sys.stdout = sys.__stdout__
 
 
-def batch_metrics_pipeline(config: dict, gt_dpt: Path) -> None:
+def batch_metrics_pipeline(
+    config: dict, truth_dpt: Path, device: torch.device, use_gpu: bool
+) -> None:
     """
     Compute metrics for a batch of images.
     Args:
-        gt_dir (str): Path to the ground truth directory of the department.
+        gt_dpt (Path): Path to the ground truth directory of the department.
         config (dict): Configuration, in which the parameters for the inference are specified
     """
 
     out_json = Path(config["metrics_out"])
 
     # output file
-    assert out_json is not None, "Please provide an output path for the metrics"
+    assert out_json, "Please provide an output path for the metrics"
 
     # __________INFERENCE__________#
     inputs_dpt = Path(config["input_path"])
 
-    for full_zone in sorted(inputs_dpt.iterdir()):
+    for full_zone in sorted(p for p in inputs_dpt.iterdir() if p.is_dir()):
 
         # find an input file image
-        if not full_zone.is_dir():
-            continue
         irc_path = next(full_zone.glob("*IRC.tif"), None)
         if irc_path is None:
             continue
 
-        dpt, zone = str(irc_path).split("/")[-3:-1]
-        truth_path = os.path.join(gt_dpt, zone)
-        truth_path = next(Path(truth_path).glob("*.tif"), None)
+        dpt, zone = irc_path.parts[-3:-1]
+        truth_dir = truth_dpt / zone
+        truth_path = next(Path(truth_dir).glob("*.tif"), None)
+        if truth_path is None:
+            print(f"No ground truth found for zone: {zone}")
+            continue
 
-        config["input_img_path"] = irc_path
-        config["truth_path"] = truth_path
-        config["output_name"] = str(irc_path).split("/")[-1].split(".")[0] + "-ARGMAX-S"
+        config.update(
+            {
+                "input_img_path": str(irc_path),
+                "truth_path": str(truth_path),
+                "output_name": f"{irc_path.stem}-ARGMAX-S",
+            }
+        )
 
         # Inference and saving the predictions
-        run_from_config(config)
+        run_pipeline(config, device, use_gpu)
 
     # we have all the predictions in the output folder
 
     out = out_json.with_suffix(".json")
 
-    metrics_file = batch_metrics(config, gt_dpt)
+    metrics_file = batch_metrics(config, truth_dpt)
 
     # save the metrics to a json file
     json.dump(
@@ -453,10 +498,10 @@ def main():
     config, device, use_gpu = setup(args)
 
     if args.batch_mode:
-        gt_dir = config["truth_root"]
-        gt_dpt = gt_dir + "/" + config["truth_path"].split("/")[-3]
+        gt_dir = Path(config["truth_root"])
+        gt_dpt = gt_dir / config["truth_path"].parts[-3]
 
-        batch_metrics_pipeline(config, Path(gt_dpt))
+        batch_metrics_pipeline(config, gt_dpt, device, use_gpu)
     else:
         run_pipeline(config, device, use_gpu)
 

@@ -110,33 +110,32 @@ def gen_param_combination(config: dict) -> list:
     Handles single case or iterative case."""
     combi = []
 
-    # TODO
-    padding_list = config["strategies"]["padding_overall"]
-    if padding_list == []:
+    # TODO : add differet padding strategies
+    padding_list = config.get("strategies", {}).get("padding_overall", [])
+    if not padding_list:
         padding_list = ["no-padding"]
 
     # configuration for comparison
-
-    if config["strategies"]["tiling"]["enabled"]:
-        tile_size_list = config["strategies"]["tiling"]["size_range"]
+    tiling_cfg = config.get("strategies", {}).get("tiling", {})
+    if tiling_cfg.get("enabled", False):
+        tile_size_list = tiling_cfg.get("size_range", [config["img_pixels_detection"]])
     else:
         tile_size_list = [config["img_pixels_detection"]]
 
-    if config["strategies"]["stitching"]["enabled"]:
-        margin_list = config["strategies"]["stitching"]["margin"]
-        stitching_methods = config["strategies"]["stitching"]["methods"]
-    else:  # default stitching : exact clipping
+    stitching_cfg = config.get("strategies", {}).get("stitching", {})
+    # default stitching : exact clipping
+    if stitching_cfg.get("enabled", False):
+        margin_list = stitching_cfg.get("margin", [config["margin"]])
+        stitching_methods = stitching_cfg.get("methods", ["exact-clipping"])
+    else:
         margin_list = [config["margin"]]
         stitching_methods = ["exact-clipping"]
 
-    # basically a grid comparison
-    # could probably benefit from some optimization but ehhh
-
     for padding in padding_list:
         for img_pixels_detection in tile_size_list:
-            config["img_pixels_detection"] = img_pixels_detection
             for margin in margin_list:
-                config["margin"] = int(margin * img_pixels_detection)
+                if margin < 1:
+                    margin = int(margin * img_pixels_detection)
                 # skip if parameters are not valid
                 if img_pixels_detection <= 2 * margin:
                     print(
@@ -144,12 +143,15 @@ def gen_param_combination(config: dict) -> list:
                     )
                     continue
 
-                stride_list = get_stride(config)
+                # avoid mutation
+                tmp_config = config.copy()
+                tmp_config["margin"] = margin
+                tmp_config["img_pixels_detection"] = img_pixels_detection
+
+                stride_list = get_stride(tmp_config)
+
                 for stride in stride_list:
                     for stitch in stitching_methods:
-
-                        config["overlap_strat"] = stitch != "exact-clipping"
-                        config["strategies"]["stitching"]["method"] = stitch
 
                         param = {
                             "img_pixels_detection": img_pixels_detection,
@@ -181,9 +183,11 @@ def info_extract(file: Path) -> dict:
     # region info
     region = region.split("_")
     dpt, zone = region[:2], region[2:]
-    info["dpt"] = "D" + "_".join(dpt)
+    if not dpt[0].startswith("D"):
+        info["dpt"] = "D" + "_".join(dpt)
     info["zone"] = "_".join(zone)
     # method info
+    info["method"] = method
     method = method.split("_")
     for param in method:
         if param.startswith("size="):
@@ -203,33 +207,21 @@ def info_extract(file: Path) -> dict:
     return info
 
 
-def get_truth_path(pred_path: Path, truth_dir: Path) -> Path:
-    zone_name = info_extract(pred_path)["zone"]
-
-    # corresponding ground truth
-    # we consider gt_folder the dpt folder
-    truth_subdir = truth_dir / zone_name
-    truth_path = next(truth_subdir.glob("*.tif"), None)
-    if truth_path is None:
-        raise FileNotFoundError(
-            f"Ground truth file not found in {truth_subdir}. Please check the folder."
-        )
-    return truth_path
-
-
 #### SETUP ####
 def setup_out_path(config: dict) -> dict:
     """Setup the output directory"""
-    Path(config["output_path"]).mkdir(parents=True, exist_ok=True)
+    output = Path(config["output_path"])
+    output.mkdir(parents=True, exist_ok=True)
+    child_dir = output
 
     if config["compare"]:
         # create a directory with a unique id
         current_time = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        child_dir = os.path.join(config["output_path"], current_time)
+        child_dir = child_dir / Path(current_time)
         os.makedirs(child_dir, exist_ok=True)
-        config["local_out"] = child_dir
-    else:
-        config["local_out"] = config["output_path"]
+        print(f"Creating output directory: {child_dir}")
+
+    config["local_out"] = child_dir
 
     return config
 
@@ -244,10 +236,9 @@ def setup_device(config: dict) -> tuple[torch.device, bool]:
 
 
 def setup(args) -> tuple[dict, torch.device, bool]:
-    """Setup the device and output path"""
+    """Setup the device"""
     config = read_config(args)
     device, use_gpu = setup_device(config)
-    config = setup_out_path(config)
 
     return config, device, use_gpu
 
@@ -276,6 +267,11 @@ def setup_indiv_path(config: dict, identifier: str) -> tuple[dict, str]:
     except Exception as error:
         print(f"Something went wrong during detection configuration: {error}")
         raise error  # avoid silent failure
+
+
+def open_images():
+    """Get the input image array.
+    Optional : get the ground truth image array."""
 
 
 #### ROUNDING AND ALIGNING ####

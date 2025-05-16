@@ -11,37 +11,51 @@ from sklearn.metrics import confusion_matrix
 from tqdm import tqdm
 
 from src.zone_detect.test.pixel_operation import slice_pixels
-from src.zone_detect.utils import get_truth_path, info_extract
+from src.zone_detect.utils import info_extract
 
 
 #### UTILS ####
 def clean_confmat(confmat: np.ndarray, config: dict) -> np.ndarray:
     #### CLEAN REGARDING WEIGHTS FOR METRICS CALC :
-    weights = np.array([config["classes"][i][0] for i in config["classes"]])
+    weights = np.array([class_info[0] for class_info in config["classes"].values()])
     unused_classes = np.where(weights == 0)[0]
-    confmat_cleaned = np.delete(confmat, unused_classes, axis=0)  # remove rows
-    confmat_cleaned = np.delete(
-        confmat_cleaned, unused_classes, axis=1
-    )  # remove columns
+    if unused_classes.size > 0:
+        confmat_cleaned = np.delete(confmat, unused_classes, axis=0)  # remove rows
+        confmat_cleaned = np.delete(
+            confmat_cleaned, unused_classes, axis=1
+        )  # remove columns
 
-    return confmat_cleaned
+        return confmat_cleaned
+    return confmat
 
 
 def valid_truth(config: dict) -> Path:
     """Check if the ground truth path is valid and coherent with the input path :
     the zone should be the same in both paths.
     """
-    truth_path = config["truth_path"]
+    truth_path = Path(config["truth_path"])
     # verify coherence with input path
-    sanity_check = config["input_img_path"].split("/")[-3:-1]  # zone
-    # sanity_check[0] = sanity_check[0][1:]
-    # because there's a D sometimes and sometimes not
-    truth_check = truth_path.split("/")[-3:-1]
+    sanity_check = str(config["input_img_path"]).split("/")[-3:-1]  # zone
+    truth_check = list(truth_path.parts[-3:-1])
     if truth_check != sanity_check:
         raise ValueError(
             f"Ground truth path {truth_path} does not match input path {config['input_img_path']}"
         )
     return Path(truth_path)
+
+
+def get_truth_path(pred_path: Path, truth_dir: Path) -> Path:
+    zone_name = info_extract(pred_path)["zone"]
+
+    # corresponding ground truth
+    # we consider gt_folder the dpt folder
+    truth_subdir = truth_dir / zone_name
+    truth_path = next(truth_subdir.glob("*.tif"), None)
+    if truth_path is None:
+        raise FileNotFoundError(
+            f"Ground truth file not found in {truth_subdir}. Please check the folder."
+        )
+    return truth_path
 
 
 def collect_paths_truth(config: dict, truth_dir: Path) -> pd.DataFrame:
@@ -59,7 +73,7 @@ def collect_paths_truth(config: dict, truth_dir: Path) -> pd.DataFrame:
 
         for pred_path in pred_files:
             method_id = Path(pred_path.name.split("IRC-ARGMAX-S_")[1]).stem
-            # zone_name_IRC-ARGMAX-S_size=128_stride=96_margin=32_padding=some-padding_stitching=exact-clipping
+            # dpt_zone-name_IRC-ARGMAX-S_size=128_stride=96_margin=32_padding=some-padding_stitching=exact-clipping
             path_collection.append(
                 {
                     "pred_path": str(pred_path),
@@ -108,8 +122,12 @@ def class_fscore(npcm):
 
 #### COMPUTATION ####
 def compute_metrics_patch(
-    pred_patch: np.ndarray, window: Window, config: dict, method: str, out_json: str
-) -> None:
+    pred_patch: np.ndarray,
+    truth: np.ndarray,
+    window: Window,
+    config: dict,
+    method: str,
+) -> dict:
     """
     Patch metrics can be computed before the stitching ,
     or once the whole image is built.
@@ -118,23 +136,26 @@ def compute_metrics_patch(
         pred_patch (np.ndarray): Predicted patch.
         window (Window): Window object for the patch.
         config (dict): Configuration, in which the parameters for the inference are specified
-        out_json (str): Path to the output JSON file for metrics. If the file exists, it will be overwritten.
+        out_json (Path): Path to the output JSON file for metrics. If the file exists, it will be overwritten.
             You better put in the name if it's raw (before stitching) or after.
     """
 
-    # get ground truth path from config
-    truth_path = valid_truth(config)
+    # raise error if invalid truth
+    valid_truth(config)
 
-    with rasterio.open(truth_path) as src:
-        # only supports argmax for now
-        target = src.read(1, window=window) - 1
+    target = truth[
+        window.row_off : window.row_off + window.height,
+        window.col_off : window.col_off + window.width,
+    ]
+
+    classes = config["classes"]
 
     #### compute metrics
     # confusion matrix
     confmat = confusion_matrix(
         target.flatten(),
         pred_patch[0].flatten(),
-        labels=list(range(int(len(config["classes"])))) + [255],
+        labels=list(range(int(len(classes)))) + [255],
     )
 
     confmat_cleaned = clean_confmat(confmat, config)
@@ -146,7 +167,6 @@ def compute_metrics_patch(
         per_c_fscore, avg_fscore = class_fscore(confmat_cleaned)
 
     # save metrics to a json file : raw or post-stitching
-    out = Path(out_json)
     key = f"{method}_{window.col_off}_{window.row_off}"
     metrics = {
         key: {
@@ -160,16 +180,12 @@ def compute_metrics_patch(
                 ovr_acc,
                 avg_fscore,
             ],
-            "classes": list(
-                np.array([config["classes"][i][1] for i in config["classes"]])
-            ),
+            "classes": [classes[i][1] for i in classes],
             "per_class_iou": list(per_c_ious),
             "per_class_fscore": list(per_c_fscore),
         }
     }
-    with open(out, "a") as f:
-        json.dump(metrics, f)
-        f.write("\n")
+    return metrics
 
 
 def batch_metrics(config: dict, truth_dir: Path) -> list:
@@ -259,9 +275,16 @@ def batch_metrics(config: dict, truth_dir: Path) -> list:
 
 
 def error_rate_loop(truth_dir: Path, out_dir: Path, pred_dir: Path) -> None:
+    """Args:
+    pred_dir (Path): the directory with predictions
+    out_dir (Path): the output directory for the error rate
+    truth_dir (Path): the ground truth directory of the department"""
     dic = {}
 
-    for pred_path in pred_dir.iterdir():
+    # get all tif files in the pred_dir
+    tif_files = list(pred_dir.rglob("*.tif"))
+
+    for pred_path in tqdm(tif_files, desc="Computing error rate"):
 
         # get corresponding truth file
         truth_file = get_truth_path(pred_path, truth_dir)
@@ -270,7 +293,7 @@ def error_rate_loop(truth_dir: Path, out_dir: Path, pred_dir: Path) -> None:
             truth_file=truth_file,
             out_dir=out_dir,
             pred_path=pred_path,
-            dic={},
+            dic=dic,
             save=False,
         )
 
@@ -286,10 +309,11 @@ def error_rate_loop(truth_dir: Path, out_dir: Path, pred_dir: Path) -> None:
         else:
             methods[method] += dic[key]
             total[method] += 1
+
     for key in methods.keys():
         methods[key] = methods[key] / total[key]
         # save the error rate as a png
-        autoscale = False
+        autoscale = True
         if autoscale:
             vmin = np.min(methods[key])
             vmax = np.max(methods[key])
@@ -305,6 +329,8 @@ def error_rate_loop(truth_dir: Path, out_dir: Path, pred_dir: Path) -> None:
         plt.title("Error Rate for method : \n" + key)
         plt.savefig(str(out_dir / f"error_rate_{key}.png"))
         plt.close()
+
+        print(f"Error rate saved to {out_dir / f'error_rate_{key}.png'}")
 
 
 # not incorporated in the pipeline, but maybe as option ?
