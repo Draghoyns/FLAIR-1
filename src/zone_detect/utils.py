@@ -1,6 +1,8 @@
 import datetime
 import os
 from pathlib import Path
+import numpy as np
+import rasterio
 import torch
 import yaml
 
@@ -165,6 +167,27 @@ def gen_param_combination(config: dict) -> list:
     return combi
 
 
+def extract_method(method: str, info: dict = {}) -> dict:
+    """Extract the method parameters from the method name."""
+    elements = method.split("_")
+    for param in elements:
+        if param.startswith("size="):
+            info["patch_size"] = int(param.split("=")[1])
+        elif param.startswith("stride="):
+            info["stride"] = int(param.split("=")[1])
+        elif param.startswith("margin="):
+            info["margin"] = int(param.split("=")[1])
+        elif param.startswith("padding="):
+            info["padding"] = param.split("=")[1]
+        elif param.startswith("stitching="):
+            info["stitching"] = param.split("=")[1]
+        else:
+            param = param.split("=")
+            info[param[0]] = param[1]
+
+    return info
+
+
 def info_extract(file: Path) -> dict:
     """Extract the information from the filename, namely the region and the method used.
     Args:
@@ -179,30 +202,17 @@ def info_extract(file: Path) -> dict:
     name = filename.split("/")[-1]
     name = name.split(".")[0]
     info = {}
-    region, method = name.split("_IRC-ARGMAX-S_")
+    region_type, method = name.split("-ARGMAX-S_")
     # region info
-    region = region.split("_")
-    dpt, zone = region[:2], region[2:]
+    region_type = region_type.split("_")
+    dpt, zone, data_type = region_type[:2], region_type[2:-1], region_type[-1]
     if not dpt[0].startswith("D"):
         info["dpt"] = "D" + "_".join(dpt)
     info["zone"] = "_".join(zone)
+
     # method info
     info["method"] = method
-    method = method.split("_")
-    for param in method:
-        if param.startswith("size="):
-            info["patch_size"] = int(param.split("=")[1])
-        elif param.startswith("stride="):
-            info["stride"] = int(param.split("=")[1])
-        elif param.startswith("margin="):
-            info["margin"] = int(param.split("=")[1])
-        elif param.startswith("padding="):
-            info["padding"] = param.split("=")[1]
-        elif param.startswith("stitching="):
-            info["stitching"] = param.split("=")[1]
-        else:
-            param = param.split("=")
-            info[param[0]] = param[1]
+    info = extract_method(method, info)
 
     return info
 
@@ -269,9 +279,22 @@ def setup_indiv_path(config: dict, identifier: str) -> tuple[dict, str]:
         raise error  # avoid silent failure
 
 
-def open_images():
-    """Get the input image array.
-    Optional : get the ground truth image array."""
+def open_images(config: dict, local_out: Path, get_truth: bool):
+    """Get the input image array and the ground truth if necessary."""
+
+    if get_truth:
+        full_truth_path = Path(config["truth_path"])
+        with rasterio.open(full_truth_path) as src:
+            truth_array = src.read(1) - 1  # to start from 0
+
+        # common to a zone (= one tif image)
+        dpt, zone = Path(config["input_img_path"]).parts[-3:-1]
+        metrics_json = local_out / Path(f"metrics_per-patch_{dpt}_{zone}.json")
+    else:
+        truth_array = np.zeros((1, 1), dtype=np.uint8)
+        metrics_json = Path()
+
+    return truth_array, metrics_json
 
 
 #### ROUNDING AND ALIGNING ####

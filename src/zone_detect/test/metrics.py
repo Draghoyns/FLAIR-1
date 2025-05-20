@@ -7,11 +7,11 @@ import numpy as np
 import pandas as pd
 import rasterio
 from rasterio.windows import Window
-from sklearn.metrics import confusion_matrix
+from sklearn.metrics import confusion_matrix as sk_confusion_matrix
 from tqdm import tqdm
 
 from src.zone_detect.test.pixel_operation import slice_pixels
-from src.zone_detect.utils import info_extract
+from src.zone_detect.utils import extract_method, info_extract
 
 
 #### UTILS ####
@@ -45,10 +45,10 @@ def valid_truth(config: dict) -> Path:
 
 
 def get_truth_path(pred_path: Path, truth_dir: Path) -> Path:
-    zone_name = info_extract(pred_path)["zone"]
+    dpt, zone_name = info_extract(pred_path)["dpt"], info_extract(pred_path)["zone"]
 
     # corresponding ground truth
-    # we consider gt_folder the dpt folder
+    # we consider gt_folder the overall folder
     truth_subdir = truth_dir / zone_name
     truth_path = next(truth_subdir.glob("*.tif"), None)
     if truth_path is None:
@@ -72,8 +72,8 @@ def collect_paths_truth(config: dict, truth_dir: Path) -> pd.DataFrame:
         truth_path = get_truth_path(pred_files[0], truth_dir)
 
         for pred_path in pred_files:
-            method_id = Path(pred_path.name.split("IRC-ARGMAX-S_")[1]).stem
-            # dpt_zone-name_IRC-ARGMAX-S_size=128_stride=96_margin=32_padding=some-padding_stitching=exact-clipping
+            method_id = info_extract(pred_path)["method"]
+            # dpt_zone-name_data-type-ARGMAX-S_size=128_stride=96_margin=32_padding=some-padding_stitching=exact-clipping
             path_collection.append(
                 {
                     "pred_path": str(pred_path),
@@ -85,6 +85,16 @@ def collect_paths_truth(config: dict, truth_dir: Path) -> pd.DataFrame:
 
 
 #### METRICS ####
+def faster_confusion_matrix(
+    y_true: np.ndarray, y_pred: np.ndarray, n_classes: int
+) -> np.ndarray:
+    mask = (y_true >= 0) & (y_true < n_classes)
+    return np.bincount(
+        n_classes * y_true[mask].astype(np.int64) + y_pred[mask].astype(np.int64),
+        minlength=n_classes**2,
+    ).reshape(n_classes, n_classes)
+
+
 def overall_accuracy(npcm):
     oa = np.trace(npcm) / npcm.sum()
     return 100 * oa
@@ -148,14 +158,18 @@ def compute_metrics_patch(
         window.col_off : window.col_off + window.width,
     ]
 
+    # get the class predictions and remove the probabilities
+    if target.shape != pred_patch.shape:
+        pred_patch = pred_patch[0]
+
     classes = config["classes"]
+    n_classes = len(classes)
 
     #### compute metrics
     # confusion matrix
-    confmat = confusion_matrix(
-        target.flatten(),
-        pred_patch[0].flatten(),
-        labels=list(range(int(len(classes)))) + [255],
+    # confmat = faster_confusion_matrix(target.flatten(), pred_patch.flatten(), n_classes)
+    confmat = sk_confusion_matrix(
+        target.flatten(), pred_patch.flatten(), labels=range(n_classes)
     )
 
     confmat_cleaned = clean_confmat(confmat, config)
@@ -180,7 +194,7 @@ def compute_metrics_patch(
                 ovr_acc,
                 avg_fscore,
             ],
-            "classes": [classes[i][1] for i in classes],
+            "classes": [classes[i][1] for i in range(1, n_classes + 1)],
             "per_class_iou": list(per_c_ious),
             "per_class_fscore": list(per_c_fscore),
         }
@@ -189,18 +203,31 @@ def compute_metrics_patch(
 
 
 def batch_metrics(config: dict, truth_dir: Path) -> list:
+    """Compute metrics for each method in the batch mode.
+    The metrics are computed for the whole image, not per patch.
+    Args:
+        config (dict): Configuration, in which the parameters for the inference are specified
+        truth_dir (Path): Path to the ground truth directory.
+    Returns:
+        metrics_file (list): List of dictionaries containing the metrics for each method.
+    """
+
     metrics_file = []
     df = collect_paths_truth(config, truth_dir)
+    classes = config["classes"]
+    n_classes = len(classes)
 
     grouped = df.groupby("method")
 
     # metrics for each method
-    for method, group in tqdm(grouped, desc="Computing metrics"):
+    print("Computing metrics...")
+    for method, group in tqdm(grouped, desc="Computing metrics...", total=len(grouped)):
 
         pred_paths = group["pred_path"].tolist()
         gt_paths = group["truth_path"].tolist()
 
-        patch_confusion_matrices = []
+        sum_confmat = np.zeros((n_classes, n_classes))
+
         for pred_path, truth_path in zip(pred_paths, gt_paths):
             try:
                 # loading
@@ -209,18 +236,14 @@ def batch_metrics(config: dict, truth_dir: Path) -> list:
                 with rasterio.open(truth_path) as src:
                     target = src.read(1) - 1
 
-                patch_confusion_matrices.append(
-                    confusion_matrix(
-                        target.flatten(),
-                        preds.flatten(),
-                        labels=list(range(int(len(config["classes"])))) + [255],
-                    )
+                # sum_confmat += faster_confusion_matrix( target.flatten(), preds.flatten(), n_classes)
+                sum_confmat += sk_confusion_matrix(
+                    target.flatten(), preds.flatten(), labels=range(n_classes)
                 )
             except Exception as e:
                 print(f"Error processing {pred_path} and {truth_path}: {e}")
 
         # compute metrics for the group
-        sum_confmat = np.sum(patch_confusion_matrices, axis=0)
         confmat_cleaned = clean_confmat(sum_confmat, config)
 
         # metrics
@@ -229,10 +252,13 @@ def batch_metrics(config: dict, truth_dir: Path) -> list:
             per_c_ious, avg_ious = class_IoU(confmat_cleaned)
             ovr_acc = overall_accuracy(confmat_cleaned)
             per_c_fscore, avg_fscore = class_fscore(confmat_cleaned)
-            avg_time = np.mean(config["times"][method])
+
+            method_times = config.get("times", {}).get(method, [])
+            avg_time = np.mean(method_times) if method_times else 0
 
         # method parameters
-        info = info_extract(Path("/" + str(method) + ".tif"))
+        info = extract_method(str(method))
+
         patch_size = info["patch_size"]
         stride = info["stride"]
         margin = info["margin"]
@@ -256,16 +282,14 @@ def batch_metrics(config: dict, truth_dir: Path) -> list:
                 padding,
                 stitching,
             ],
-            "Avg_metrics_name": ["mIoU", "Overall Accuracy", "Fscore", "Time"],
+            "Avg_metrics_name": ["mIoU", "Overall Accuracy", "Fscore", "Time in ms"],
             "Avg_metrics": [
                 avg_ious,
                 ovr_acc,
                 avg_fscore,
                 avg_time,
             ],
-            "classes": list(
-                np.array([config["classes"][i][1] for i in config["classes"]])
-            ),
+            "classes": [classes[i][1] for i in range(1, n_classes + 1)],
             "per_class_iou": list(per_c_ious),
             "per_class_fscore": list(per_c_fscore),
         }
@@ -351,9 +375,7 @@ def error_rate_patch(
         file_info["margin"],
     )
 
-    full_method = (
-        str(pred_path).split("/")[-1].split("_IRC-ARGMAX-S_")[1].split(".tif")[0]
-    )
+    full_method = str(pred_path).split("/")[-1].split("-ARGMAX-S_")[1].split(".tif")[0]
 
     region_check = f"{dpt}/{zone}/himom.tif"
 
@@ -486,3 +508,14 @@ def plot_metrics(df: pd.DataFrame, param: str, metric: str) -> None:
     plt.savefig(f"{param}_{metric}.png")
     plt.close()
     print(f"Plot saved to {param}_{metric}.png")
+
+
+if __name__ == "__main__":
+    # compute a posteriori metrics = error rate
+
+    truth_dir = "/media/DATA/INFERENCE_HS/DATA/dataset_zone_last/labels_raster/FLAIR_19"
+    out_dir = "/media/DATA/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out20250519/error_rate_margin=0"
+    pred_dir = "/media/DATA/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out20250519"
+
+    error_rate_loop(Path(truth_dir), Path(out_dir), Path(pred_dir))
+    pass

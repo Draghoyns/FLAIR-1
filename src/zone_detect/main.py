@@ -17,11 +17,13 @@ from src.zone_detect.slicing_job import slice_extent, slice_extent_separate
 from src.zone_detect.model import load_model
 from src.zone_detect.dataset import Sliced_Dataset
 from src.zone_detect.test.metrics import batch_metrics, compute_metrics_patch
+from src.zone_detect.test.tests import test_compute_metrics_patch
 from src.zone_detect.test.tiles import get_stride
 from src.zone_detect.compare import inference, stitching
 
 from src.zone_detect.utils import (
     gen_param_combination,
+    open_images,
     setup_device,
     setup_out_path,
     setup,
@@ -263,19 +265,12 @@ def run_pipeline(config: dict, device: torch.device, use_gpu: bool) -> None:
     # model
     model = prepare_model(config, device)
 
-    # set truth path
-
-    if compute_metrics:
-        full_truth_path = Path(config["truth_path"])
-        with rasterio.open(full_truth_path) as src:
-            truth_array = src.read(1) - 1  # to start from 0
-
-        # common to a zone (= one tif image)
-        dpt, zone = Path(config["input_img_path"]).parts[-3:-1]
-        metrics_json = local_out / Path(f"metrics_per-patch_{dpt}_{zone}.json")
-    else:
-        truth_array = np.zeros((1, 1), dtype=np.uint8)
-        metrics_json = Path()
+    # setup elements for the metrics
+    truth_array, metrics_json = open_images(
+        config,
+        local_out,
+        compute_metrics,
+    )
 
     if compare:
 
@@ -293,6 +288,16 @@ def run_pipeline(config: dict, device: torch.device, use_gpu: bool) -> None:
             padding = combi["padding"]
             stride = combi["stride"]
             stitch = combi["stitching"]
+
+            config.update(
+                {
+                    "img_pixels_detection": img_pixels_detection,
+                    "margin": margin,
+                    "padding": padding,
+                    "stride": stride,
+                    "stitching": stitch,
+                }
+            )
 
             method = f"size={img_pixels_detection}_stride={stride}_margin={margin}_padding={padding}_stitching={stitch}"
             identifier = "_" + method
@@ -344,8 +349,9 @@ def run_pipeline(config: dict, device: torch.device, use_gpu: bool) -> None:
 
                     if compute_metrics:
                         # compute metrics per patch
-                        inference_time = datetime.datetime.now() - start_time
-                        inference_time = inference_time.total_seconds()
+                        inference_time = (
+                            datetime.datetime.now() - start_time
+                        ).total_seconds() * 1000  # ms                        inference_time = inference_time.total_seconds()
                         if method not in method_times:
                             method_times[method] = [inference_time]
                         else:
@@ -442,6 +448,8 @@ def batch_metrics_pipeline(
     """
 
     out_json = Path(config["metrics_out"])
+    data_type = config["data_type"]
+    file_pattern = f"*{data_type}.tif"
 
     # output file
     assert out_json, "Please provide an output path for the metrics"
@@ -449,10 +457,11 @@ def batch_metrics_pipeline(
     # __________INFERENCE__________#
     inputs_dpt = Path(config["input_path"])
 
-    for full_zone in sorted(p for p in inputs_dpt.iterdir() if p.is_dir()):
+    zone_list = sorted(p for p in inputs_dpt.iterdir() if p.is_dir())
+    for full_zone in zone_list:
 
         # find an input file image
-        irc_path = next(full_zone.glob("*IRC.tif"), None)
+        irc_path = next(full_zone.glob(file_pattern), None)
         if irc_path is None:
             continue
 
