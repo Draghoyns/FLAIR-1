@@ -2,15 +2,29 @@ import numpy as np
 
 
 def get_stride(config: dict) -> list:
+    img_size = config["img_pixels_detection"]
 
     ## handle default = no overlap handling
-    if "overlap_strat" not in config:
-        stride = [config["img_pixels_detection"] - 2 * config["margin"]]
-    elif config["overlap_strat"]:  # overlap is handled and parameterized
-        stride = config["strategies"]["tiling"]["stride_range"]
-    else:  # exact clipping
-        stride = [config["img_pixels_detection"] - 2 * config["margin"]]
+    if not config.get("overlap_strat"):
+        stride = [int(img_size - 2 * config["margin"])]
+    else:  # overlap is handled and parameterized
+        stride = [
+            int(i * img_size) for i in config["strategies"]["tiling"]["stride_range"]
+        ]
     return stride
+
+
+def out_of_bounds(bigbox: list[float], box: list[float]) -> list[bool]:
+    """Check if the coordinates are out of bounds"""
+
+    oob = []
+    left, right, bottom, top = bigbox
+    for coord in box:
+        if coord < left or coord > right or coord < bottom or coord > top:
+            oob.append(True)
+        else:
+            oob.append(False)
+    return oob
 
 
 def get_tile_coord(
@@ -56,20 +70,16 @@ def patch_overlap(
     for tile_y in y_tiles:
         for tile_x in x_tiles:
 
-            if tile_y + patch_size > image_size_y:
-                tile_y = image_size_y - patch_size
-            if tile_x + patch_size > image_size_x:
-                tile_x = image_size_x - patch_size
+            tile_y = min(tile_y, image_size_y - patch_size)
+            tile_x = min(tile_x, image_size_x - patch_size)
 
-            tile_ymin = tile_y
             tile_ymax = tile_y + patch_size
-            tile_xmin = tile_x
             tile_xmax = tile_x + patch_size
 
             # Compute overlap between tile and the given patch
-            inter_ymin = max(tile_ymin, y_min)
+            inter_ymin = max(tile_y, y_min)
             inter_ymax = min(tile_ymax, y_max)
-            inter_xmin = max(tile_xmin, x_min)
+            inter_xmin = max(tile_x, x_min)
             inter_xmax = min(tile_xmax, x_max)
 
             if inter_ymax > inter_ymin and inter_xmax > inter_xmin:
@@ -84,21 +94,18 @@ def patch_overlap(
     return overlap_map
 
 
-def patch_weights(patch_size: int) -> np.ndarray:
+def patch_weights(patch_size: int, sigma: float, mode: str) -> np.ndarray:
     """Distance map to the center of the patch, given the patch"""
-    dist = np.zeros((patch_size, patch_size))
     center = patch_size // 2
-    for i in range(patch_size):
-        for j in range(patch_size):
-            dist[i, j] = max(abs(i - center), abs(j - center))
+    y, x = np.ogrid[:patch_size, :patch_size]
+    dist = np.maximum(np.abs(y - center), np.abs(x - center))
 
-    # maybe use a gaussian kernel
+    if mode == "gaussian":
+        weights = np.exp(-dist / dist.max() ** 2) / (2 * sigma**2)
+    else:
+        weights = np.exp(-dist / dist.max() * sigma)  # smooth decay
 
-    # smooth exponential decay
-
-    sigma = 0.5
-    dist = np.exp(-dist / dist.max() * sigma)  # smooth decay
-    return dist
+    return weights
 
 
 def total_weights(
@@ -125,14 +132,14 @@ def total_weights(
     # for each pixel in the query, if it is in a tile,
     # get the distance map of the tile and add the right value to the map
 
+    weights = patch_weights(patch_size, sigma=0.5, mode="exp")
+
     for tile_y in y_tiles:
         for tile_x in x_tiles:
 
             # edge case
-            if tile_y + patch_size > image_size_y:
-                tile_y = image_size_y - patch_size
-            if tile_x + patch_size > image_size_x:
-                tile_x = image_size_x - patch_size
+            tile_y = min(tile_y, image_size_y - patch_size)
+            tile_x = min(tile_x, image_size_x - patch_size)
 
             # Compute overlap between tile and the given patch
             inter_ymin = max(tile_y, y_min)
@@ -148,7 +155,6 @@ def total_weights(
                 local_x_tile_start = inter_xmin - tile_x
                 h = inter_ymax - inter_ymin
                 w = inter_xmax - inter_xmin
-                weights = patch_weights(patch_size)
                 map[
                     local_y_start : local_y_start + h,
                     local_x_start : local_x_start + w,

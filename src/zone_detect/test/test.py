@@ -2,9 +2,10 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import rasterio
+import yaml
 
-from src.zone_detect.test.metrics import *
-from src.zone_detect.utils import read_config
+from src.zone_detect.utils import preprocess_config
+from src.zone_detect.test.tests import *
 
 
 def geogr_patches(
@@ -135,17 +136,15 @@ if __name__ == "__main__":
     # metrics
     config_file = "config_detect_compare_metrics.yaml"
 
-    config = config_dir + config_file
+    config_path = config_dir + config_file
 
-    # toy "image"
-    img_size = 5, 5
-    patch_size = 3
-    margin = 0
-    stride = 2
-    query = (0, 5, 0, 5)
-
-    # read config
-    config = read_config(config)
+    toy = {
+        "img_size": (5, 5),
+        "patch_size": 3,
+        "margin": 0,
+        "stride": 2,
+        "query": (0, 5, 0, 5),
+    }
 
     """# prediction files
     # get a folder inside output_path
@@ -160,10 +159,9 @@ if __name__ == "__main__":
     for pred in pred_path.iterdir():
         if not pred.is_file() or not pred.name.endswith(".tif"):
             continue
-        list_preds.append(pred)
-"""
+        list_preds.append(pred)"""
 
-    # metrics analysis
+    """# metrics analysis
 
     metrics_path = config["metrics_out"]
 
@@ -174,3 +172,29 @@ if __name__ == "__main__":
     metrics = ["mIoU", "Overall Accuracy", "Fscore"]
 
     plot_metrics(analyze_param(df, param, metrics[0]), param, metrics[0])
+"""
+
+    # test error rate on margin 0
+
+    truth = "/media/DATA/INFERENCE_HS/DATA/dataset_zone_last/labels_raster/FLAIR_19/D037_2021/"
+
+    out_dir = "/media/DATA/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out20250520"
+
+    pred_dir = "/media/DATA/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out20250519_rerun"
+    # "/media/DATA/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out20250514/20250514_174851_margin=0"
+
+    # test metrics pipeline
+
+    # _____________________
+    with open(config_path, "r") as f:
+        config = yaml.safe_load(f)
+
+    # put arguments in config
+    config["metrics"] = True
+    config["batch_mode"] = True
+    config["compare"] = True
+
+    config = preprocess_config(config)
+    # ______________________
+
+    error_rate_loop(Path(truth), Path(out_dir), Path(pred_dir))
