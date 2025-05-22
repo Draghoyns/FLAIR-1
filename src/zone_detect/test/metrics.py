@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 import rasterio
 from rasterio.windows import Window
-from sklearn.metrics import confusion_matrix as sk_confusion_matrix
+from sklearn.metrics import confusion_matrix
 from tqdm import tqdm
 
 from src.zone_detect.test.pixel_operation import slice_pixels
@@ -85,16 +85,6 @@ def collect_paths_truth(config: dict, truth_dir: Path) -> pd.DataFrame:
 
 
 #### METRICS ####
-def faster_confusion_matrix(
-    y_true: np.ndarray, y_pred: np.ndarray, n_classes: int
-) -> np.ndarray:
-    mask = (y_true >= 0) & (y_true < n_classes)
-    return np.bincount(
-        n_classes * y_true[mask].astype(np.int64) + y_pred[mask].astype(np.int64),
-        minlength=n_classes**2,
-    ).reshape(n_classes, n_classes)
-
-
 def overall_accuracy(npcm):
     oa = np.trace(npcm) / npcm.sum()
     return 100 * oa
@@ -168,7 +158,7 @@ def compute_metrics_patch(
     #### compute metrics
     # confusion matrix
     # confmat = faster_confusion_matrix(target.flatten(), pred_patch.flatten(), n_classes)
-    confmat = sk_confusion_matrix(
+    confmat = confusion_matrix(
         target.flatten(), pred_patch.flatten(), labels=range(n_classes)
     )
 
@@ -236,8 +226,7 @@ def batch_metrics(config: dict, truth_dir: Path) -> list:
                 with rasterio.open(truth_path) as src:
                     target = src.read(1) - 1
 
-                # sum_confmat += faster_confusion_matrix( target.flatten(), preds.flatten(), n_classes)
-                sum_confmat += sk_confusion_matrix(
+                sum_confmat += confusion_matrix(
                     target.flatten(), preds.flatten(), labels=range(n_classes)
                 )
             except Exception as e:
@@ -513,9 +502,8 @@ def plot_metrics(df: pd.DataFrame, param: str, metric: str) -> None:
 if __name__ == "__main__":
     # compute a posteriori metrics = error rate
 
-    truth_dir = "/media/DATA/INFERENCE_HS/DATA/dataset_zone_last/labels_raster/FLAIR_19"
-    out_dir = "/media/DATA/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out20250519/error_rate_margin=0"
-    pred_dir = "/media/DATA/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out20250519"
+    truth_dir = "/media/DATA/INFERENCE_HS/DATA/dataset_zone_last/labels_raster/FLAIR_19/D037_2021/"
+    out_dir = "/media/DATA/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out2025020/error_rate_margin=0_swin_RVB"
+    pred_dir = "/media/DATA/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out20250520_swin_RVB_last"
 
     error_rate_loop(Path(truth_dir), Path(out_dir), Path(pred_dir))
-    pass
