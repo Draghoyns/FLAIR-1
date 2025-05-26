@@ -1,13 +1,16 @@
 # testing all sorts of functions for my own sanity
 
 import json
+import os
 from pathlib import Path
 import numpy as np
 import pandas as pd
 import rasterio
 from tqdm import tqdm
 from src.zone_detect.test.metrics import *
+from src.zone_detect.test.tiles import get_stride
 from src.zone_detect.utils import extract_method, info_extract
+from sklearn.metrics import confusion_matrix
 
 
 def test_error_rate(img_path: Path, out_dir: Path, verbose: bool = False) -> None:
@@ -322,8 +325,8 @@ def test_batch_metrics(config: dict, truth_dir: Path) -> list:
                     target = src.read(1) - 1
 
                 # patch_confusion_matrices.append( confusion_matrix( target.flatten(), preds.flatten(), labels=list(range(int(len(config["classes"])))) + [255],))
-                sum_confmat += faster_confusion_matrix(
-                    target.flatten(), preds.flatten(), n_classes
+                sum_confmat += confusion_matrix(
+                    target.flatten(), preds.flatten(), labels=list(range(n_classes))
                 )
 
             except Exception as e:
@@ -474,7 +477,9 @@ def test_compute_metrics_patch(
 
     #### compute metrics
     # confusion matrix
-    confmat = faster_confusion_matrix(target.flatten(), pred_patch.flatten(), n_classes)
+    confmat = confusion_matrix(
+        target.flatten(), pred_patch.flatten(), labels=list(range(n_classes))
+    )
 
     confmat_cleaned = clean_confmat(confmat, config)
 
@@ -504,3 +509,73 @@ def test_compute_metrics_patch(
         }
     }
     return metrics
+
+
+# last checked and updated : 20250522 1028
+def test_gen_param_combination(config: dict) -> list:
+    """Generate all possible combinations of parameters.
+    Handles single case or iterative case."""
+    combi = []
+
+    # TODO : add differet padding strategies
+    padding_list = config.get("strategies", {}).get("padding_overall", [])
+    if not padding_list:
+        padding_list = ["no-padding"]
+
+    # configuration for comparison
+    tiling_cfg = config.get("strategies", {}).get("tiling", {})
+    if tiling_cfg.get("enabled", False):
+        tile_size_list = tiling_cfg.get("size_range", [config["img_pixels_detection"]])
+    else:
+        tile_size_list = [config["img_pixels_detection"]]
+
+    stitching_cfg = config.get("strategies", {}).get("stitching", {})
+    # default stitching : exact clipping
+    if stitching_cfg.get("enabled", False):
+        print("Stitching enabled")
+        print(config["strategies"]["stitching"]["margin"])
+        margin_list = stitching_cfg.get("margin", [config["margin"]])
+        stitching_methods = stitching_cfg.get("methods", ["exact-clipping"])
+    else:
+        print("Stitching disabled")
+        print("Using default stitching method")
+        margin_list = [config["margin"]]
+        stitching_methods = ["exact-clipping"]
+
+    print("Margin list: ", margin_list)
+    # print("Tile size list: ", tile_size_list)
+
+    for padding in padding_list:
+        for img_pixels_detection in tile_size_list:
+            for margin in margin_list:
+                if margin < 1:
+                    margin = int(margin * img_pixels_detection)
+                # skip if parameters are not valid
+                if img_pixels_detection <= 2 * margin:
+                    print(
+                        f"""    [x] skipping {img_pixels_detection} pixels detection size with {margin} margin..."""
+                    )
+                    continue
+
+                # avoid mutation
+                tmp_config = config.copy()
+                tmp_config["margin"] = margin
+                tmp_config["img_pixels_detection"] = img_pixels_detection
+
+                stride_list = get_stride(tmp_config)
+
+                for stride in stride_list:
+                    for stitch in stitching_methods:
+
+                        param = {
+                            "img_pixels_detection": img_pixels_detection,
+                            "margin": margin,
+                            "padding": padding,
+                            "stitching": stitch,
+                            "stride": stride,
+                        }
+                        combi.append(param)
+
+    # print("Combinations generated: ", combi)
+
+    return combi

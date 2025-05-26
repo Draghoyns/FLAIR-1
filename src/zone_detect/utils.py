@@ -99,6 +99,7 @@ def check_list_type(lst: list, expected_type: type) -> list:
     if isinstance(lst, expected_type):
         res = [lst]
     elif hasattr(lst, "__iter__"):
+        # only keep values with valid types
         res = [i for i in lst if isinstance(i, expected_type)]
 
     assert all(
@@ -208,6 +209,8 @@ def info_extract(file: Path) -> dict:
     dpt, zone, data_type = region_type[:2], region_type[2:-1], region_type[-1]
     if not dpt[0].startswith("D"):
         info["dpt"] = "D" + "_".join(dpt)
+    else:
+        info["dpt"] = "_".join(dpt)
     info["zone"] = "_".join(zone)
 
     # method info

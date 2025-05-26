@@ -3,6 +3,7 @@ from pathlib import Path
 import sys
 import datetime
 import warnings
+from codecarbon import OfflineEmissionsTracker
 import numpy as np
 import rasterio
 import argparse
@@ -447,12 +448,14 @@ def batch_metrics_pipeline(
         config (dict): Configuration, in which the parameters for the inference are specified
     """
 
-    out_json = Path(config["metrics_out"])
+    out_json = config["metrics_out"]
     data_type = config["data_type"]
     file_pattern = f"*{data_type}.tif"
+    compute_metrics = config["metrics"]
 
     # output file
-    assert out_json, "Please provide an output path for the metrics"
+    if compute_metrics:
+        assert out_json, "Please provide an output path for the metrics"
 
     # __________INFERENCE__________#
     inputs_dpt = Path(config["input_path"])
@@ -461,22 +464,23 @@ def batch_metrics_pipeline(
     for full_zone in zone_list:
 
         # find an input file image
-        irc_path = next(full_zone.glob(file_pattern), None)
-        if irc_path is None:
+        img_path = next(full_zone.glob(file_pattern), None)
+        if img_path is None:
             continue
 
-        dpt, zone = irc_path.parts[-3:-1]
-        truth_dir = truth_dpt / zone
-        truth_path = next(Path(truth_dir).glob("*.tif"), None)
-        if truth_path is None:
-            print(f"No ground truth found for zone: {zone}")
-            continue
+        if compute_metrics:
+            dpt, zone = img_path.parts[-3:-1]
+            truth_dir = truth_dpt / zone
+            truth_path = next(Path(truth_dir).glob("*.tif"), None)
+            if truth_path is None:
+                print(f"No ground truth found for zone: {zone}")
+                continue
+            config.update({"truth_path": str(truth_path)})
 
         config.update(
             {
-                "input_img_path": str(irc_path),
-                "truth_path": str(truth_path),
-                "output_name": f"{irc_path.stem}-ARGMAX-S",
+                "input_img_path": str(img_path),
+                "output_name": f"D{img_path.stem}-ARGMAX-S",
             }
         )
 
@@ -485,20 +489,25 @@ def batch_metrics_pipeline(
 
     # we have all the predictions in the output folder
 
-    out = out_json.with_suffix(".json")
+    if compute_metrics:
 
-    metrics_file = batch_metrics(config, truth_dpt)
+        out = Path(out_json).with_suffix(".json")
 
-    # save the metrics to a json file
-    json.dump(
-        metrics_file,
-        open(out, "w"),
-    )
-    print(f"Metrics saved to {out}")
+        metrics_file = batch_metrics(config, truth_dpt)
+
+        # save the metrics to a json file
+        json.dump(
+            metrics_file,
+            open(out, "w"),
+        )
+        print(f"Metrics saved to {out}")
 
 
 # __________Main function___________#
 def main():
+
+    tracker = OfflineEmissionsTracker(country_iso_code="FRA")
+    tracker.start()
 
     # reading yaml
     args = argParser.parse_args()
@@ -508,11 +517,15 @@ def main():
 
     if args.batch_mode:
         gt_dir = Path(config["truth_root"])
-        gt_dpt = gt_dir / config["truth_path"].parts[-3]
+        gt_dpt = gt_dir / Path(config["truth_path"]).parts[-3]
 
         batch_metrics_pipeline(config, gt_dpt, device, use_gpu)
     else:
         run_pipeline(config, device, use_gpu)
+
+    emissions = tracker.stop()
+
+    print(f"Emissions: {emissions} g CO2")
 
 
 if __name__ == "__main__":

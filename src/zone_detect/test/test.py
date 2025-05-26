@@ -130,13 +130,20 @@ if __name__ == "__main__":
     # default
     # config_file = "config_argmax_small_irc_test.yaml"
 
-    # comparison
-    # config_file = "config-compare_strat.yaml"
-
     # metrics
     config_file = "config_detect_compare_metrics.yaml"
-
     config_path = config_dir + config_file
+
+    with open(config_path, "r") as f:
+        config = yaml.safe_load(f)
+
+    # put arguments in config
+    config["metrics"] = True
+    config["batch_mode"] = True
+    config["compare"] = True
+
+    config = preprocess_config(config)
+    # ______________________
 
     toy = {
         "img_size": (5, 5),
@@ -174,8 +181,6 @@ if __name__ == "__main__":
     plot_metrics(analyze_param(df, param, metrics[0]), param, metrics[0])
 """
 
-    # test error rate on margin 0
-
     truth = "/media/DATA/INFERENCE_HS/DATA/dataset_zone_last/labels_raster/FLAIR_19/D037_2021/"
 
     out_dir = "/media/DATA/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out20250520"
@@ -183,18 +188,4 @@ if __name__ == "__main__":
     pred_dir = "/media/DATA/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out20250519_rerun"
     # "/media/DATA/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out20250514/20250514_174851_margin=0"
 
-    # test metrics pipeline
-
-    # _____________________
-    with open(config_path, "r") as f:
-        config = yaml.safe_load(f)
-
-    # put arguments in config
-    config["metrics"] = True
-    config["batch_mode"] = True
-    config["compare"] = True
-
-    config = preprocess_config(config)
-    # ______________________
-
-    error_rate_loop(Path(truth), Path(out_dir), Path(pred_dir))
+    # error_rate_loop(Path(truth), Path(out_dir), Path(pred_dir))
