@@ -1,21 +1,27 @@
 import datetime
 import json
-from pathlib import Path
-from matplotlib import pyplot as plt
+from tqdm import tqdm
 
+from pathlib import Path
+from typing import Any
+
+from matplotlib import pyplot as plt
 import numpy as np
 import pandas as pd
+
 import rasterio
 from rasterio.windows import Window
+
 from sklearn.metrics import confusion_matrix
-from tqdm import tqdm
 
 from src.zone_detect.test.pixel_operation import slice_pixels
 from src.zone_detect.utils import extract_method, info_extract
 
+Config = dict[str, Any]  # type alias for configuration dictionary
+
 
 #### UTILS ####
-def clean_confmat(confmat: np.ndarray, config: dict) -> np.ndarray:
+def clean_confmat(confmat: np.ndarray, config: Config) -> np.ndarray:
     #### CLEAN REGARDING WEIGHTS FOR METRICS CALC :
     weights = np.array([class_info[0] for class_info in config["classes"].values()])
     unused_classes = np.where(weights == 0)[0]
@@ -29,7 +35,7 @@ def clean_confmat(confmat: np.ndarray, config: dict) -> np.ndarray:
     return confmat
 
 
-def valid_truth(config: dict) -> Path:
+def valid_truth(config: Config) -> Path:
     """Check if the ground truth path is valid and coherent with the input path :
     the zone should be the same in both paths.
     """
@@ -58,7 +64,7 @@ def get_truth_path(pred_path: Path, truth_dir: Path) -> Path:
     return truth_path
 
 
-def collect_paths_truth(config: dict, truth_dir: Path) -> pd.DataFrame:
+def collect_paths_truth(config: Config, truth_dir: Path) -> pd.DataFrame:
     path_collection = []
 
     # get predictions
@@ -85,12 +91,12 @@ def collect_paths_truth(config: dict, truth_dir: Path) -> pd.DataFrame:
 
 
 #### METRICS ####
-def overall_accuracy(npcm):
+def overall_accuracy(npcm: np.ndarray) -> float:
     oa = np.trace(npcm) / npcm.sum()
     return 100 * oa
 
 
-def class_IoU(npcm):
+def class_IoU(npcm: np.ndarray) -> tuple[np.ndarray, float]:
     ious = (
         100
         * np.diag(npcm)
@@ -100,19 +106,19 @@ def class_IoU(npcm):
     return ious, np.mean(ious)
 
 
-def class_precision(npcm):
+def class_precision(npcm: np.ndarray) -> tuple[np.ndarray, float]:
     precision = 100 * np.diag(npcm) / np.sum(npcm, axis=0)
     precision[np.isnan(precision)] = 0
     return precision, np.mean(precision)
 
 
-def class_recall(npcm):
+def class_recall(npcm: np.ndarray) -> tuple[np.ndarray, float]:
     recall = 100 * np.diag(npcm) / np.sum(npcm, axis=1)
     recall[np.isnan(recall)] = 0
     return recall, np.mean(recall)
 
 
-def class_fscore(npcm):
+def class_fscore(npcm: np.ndarray):
     precision = class_precision(npcm)[0]
     recall = class_recall(npcm)[0]
     fscore = 2 * (precision * recall) / (precision + recall)
@@ -125,9 +131,9 @@ def compute_metrics_patch(
     pred_patch: np.ndarray,
     truth: np.ndarray,
     window: Window,
-    config: dict,
+    config: Config,
     method: str,
-) -> dict:
+) -> dict[str, Any]:
     """
     Patch metrics can be computed before the stitching ,
     or once the whole image is built.
@@ -192,7 +198,7 @@ def compute_metrics_patch(
     return metrics
 
 
-def batch_metrics(config: dict, truth_dir: Path) -> list:
+def batch_metrics(config: Config, truth_dir: Path) -> list[dict[str, Any]]:
     """Compute metrics for each method in the batch mode.
     The metrics are computed for the whole image, not per patch.
     Args:

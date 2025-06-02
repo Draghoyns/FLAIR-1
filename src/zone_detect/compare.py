@@ -1,13 +1,16 @@
-import numpy as np
 import geopandas as gpd
+import numpy as np
+
+from typing import Any
+
+import torch
+
+from rasterio.features import geometry_window
+from rasterio.io import DatasetWriter
+from rasterio.windows import Window
 
 from src.zone_detect.dataset import convert
 from src.zone_detect.slicing_job import create_polygon_from_bounds
-
-import torch
-from rasterio.features import geometry_window
-from rasterio.windows import Window
-from rasterio.io import DatasetWriter
 
 from src.zone_detect.test.tiles import (
     patch_overlap,
@@ -21,7 +24,7 @@ def inference(
     device: torch.device,
     model: torch.nn.Module,
     use_gpu: bool,
-    config: dict,
+    config: dict[str, Any],
     samples: dict[str, torch.Tensor],
 ) -> tuple[np.ndarray, np.ndarray]:
     imgs = samples["image"].to(device, non_blocking=(device.type == "cuda"))
@@ -40,7 +43,7 @@ def inference(
 
 
 def stitching(
-    config: dict,
+    config: dict[str, Any],
     sliced_dataframe: gpd.GeoDataFrame,
     prediction: np.ndarray,
     index: np.ndarray,

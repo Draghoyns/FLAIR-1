@@ -2,15 +2,20 @@
 
 import json
 import os
+from tqdm import tqdm
+
 from pathlib import Path
+
 import numpy as np
 import pandas as pd
+
+from sklearn.metrics import confusion_matrix
+
 import rasterio
-from tqdm import tqdm
+
 from src.zone_detect.test.metrics import *
 from src.zone_detect.test.tiles import get_stride
 from src.zone_detect.utils import extract_method, info_extract
-from sklearn.metrics import confusion_matrix
 
 
 def test_error_rate(img_path: Path, out_dir: Path, verbose: bool = False) -> None:

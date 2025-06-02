@@ -1,9 +1,11 @@
+import os
+
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Mapping
+
 import torch
 import torch.nn as nn
-import os
-from pathlib import Path
-from dataclasses import dataclass, field
-from typing import Mapping
 
 import segmentation_models_pytorch as smp
 from transformers import AutoModelForSemanticSegmentation, AutoConfig

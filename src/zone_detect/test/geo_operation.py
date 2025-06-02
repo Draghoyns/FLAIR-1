@@ -1,7 +1,10 @@
 import os
 from pathlib import Path
+
 import geopandas as gpd
+
 import rasterio
+
 from shapely import Polygon
 from shapely.geometry import box
 
@@ -19,7 +22,7 @@ def slice_geo(
     output_name: str,
     write_dataframe: bool,
     patches: list[tuple[int, int, int, int]],
-) -> tuple[gpd.GeoDataFrame, dict, tuple[float, float], list[int]]:
+) -> tuple[gpd.GeoDataFrame, dict, tuple[float, float], tuple[int, int]]:
 
     # get geo info
     with rasterio.open(in_img) as src:
@@ -105,4 +108,4 @@ def slice_geo(
             driver="GPKG",
         )
 
-    return gdf_output, profile, resolution, [img_width, img_height]
+    return gdf_output, profile, resolution, (img_width, img_height)

@@ -1,9 +1,11 @@
 import os
+from pathlib import Path
+
 import numpy as np
-import rasterio
 import geopandas as gpd
 
-from pathlib import Path
+import rasterio
+
 from shapely.geometry import box, mapping
 
 from src.zone_detect.test.geo_operation import slice_geo, create_box_from_bounds
@@ -24,7 +26,7 @@ def slice_extent(
     output_name: str,
     write_dataframe: bool,
     stride: int,
-) -> tuple[gpd.GeoDataFrame, dict, tuple[float, float], list[int]]:
+) -> tuple[gpd.GeoDataFrame, dict, tuple[float, float], tuple[int, int]]:
 
     with rasterio.open(in_img) as src:
         img_width, img_height = src.read(1).shape
@@ -115,7 +117,7 @@ def slice_extent(
             driver="GPKG",
         )
 
-    return gdf_output, profile, (resolution_x, resolution_y), [img_width, img_height]
+    return gdf_output, profile, (resolution_x, resolution_y), (img_width, img_height)
 
 
 def slice_extent_separate(
@@ -126,8 +128,8 @@ def slice_extent_separate(
     output_name: str,
     write_dataframe: bool,
     stride: int,
-) -> tuple[gpd.GeoDataFrame, dict, tuple[float, float], list[int]]:
-    """It sucks because there is a slight shift of pixel, making the metriucs evaluation wrong"""
+) -> tuple[gpd.GeoDataFrame, dict, tuple[float, float], tuple[int, int]]:
+    """It sucks because there is a slight shift of pixel, making the metrics evaluation wrong"""
 
     img_size = rasterio.open(in_img).read(1).shape[::-1]  # (width, height)
     patches = slice_pixels(img_size, patch_size, margin, stride)

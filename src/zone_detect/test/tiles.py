@@ -1,7 +1,9 @@
+from typing import Any
+
 import numpy as np
 
 
-def get_stride(config: dict) -> list:
+def get_stride(config: dict[str, Any]) -> list[int]:
     img_size = config["img_pixels_detection"]
 
     ## handle default = no overlap handling

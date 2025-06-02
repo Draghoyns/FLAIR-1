@@ -1,26 +1,31 @@
-import json
-from pathlib import Path
-import sys
-import datetime
-import warnings
-from codecarbon import OfflineEmissionsTracker
-import numpy as np
-import rasterio
 import argparse
+import datetime
+import json
+import sys
 from tqdm import tqdm
+import warnings
+
+from pathlib import Path
+from typing import Any
+
+from codecarbon import OfflineEmissionsTracker
 
 from geopandas import GeoDataFrame
-import torch
-from torch.utils.data import DataLoader
+
 from pytorch_lightning.utilities.rank_zero import rank_zero_only  # type: ignore
 
-from src.zone_detect.slicing_job import slice_extent, slice_extent_separate
-from src.zone_detect.model import load_model
-from src.zone_detect.dataset import Sliced_Dataset
-from src.zone_detect.test.metrics import batch_metrics, compute_metrics_patch
-from src.zone_detect.test.tests import test_compute_metrics_patch
-from src.zone_detect.test.tiles import get_stride
+import rasterio
+
+import torch
+from torch.utils.data import DataLoader
+
 from src.zone_detect.compare import inference, stitching
+from src.zone_detect.dataset import Sliced_Dataset
+from src.zone_detect.model import load_model
+from src.zone_detect.slicing_job import slice_extent, slice_extent_separate
+
+from src.zone_detect.test.metrics import batch_metrics, compute_metrics_patch
+from src.zone_detect.test.tiles import get_stride
 
 from src.zone_detect.utils import (
     gen_param_combination,
@@ -31,10 +36,11 @@ from src.zone_detect.utils import (
     setup_indiv_path,
 )
 
+Config = dict[str, Any]
 
 warnings.simplefilter(action="ignore", category=FutureWarning)
 
-#### CONF FILE
+#### PARSER
 argParser = argparse.ArgumentParser()
 argParser.add_argument("--conf", help="path to the .yaml config file")
 argParser.add_argument(
@@ -67,9 +73,9 @@ class Logger(object):
 
 # we're not handling multiple inputs yet
 def conf_log(
-    config: dict,
+    config: Config,
     resolution: tuple[float, float],
-    img_size: list[int],
+    img_size: tuple[int, int],
 ) -> None:
     # Determine model template info based on provider
     mf = config["model_framework"]
@@ -104,7 +110,7 @@ def conf_log(
 
     |- input image path: {config['input_img_path']}
     |- channels: {config['channels']}
-    |- input image WxH: {img_size[0], img_size[1]}   
+    |- input image WxH: {img_size}   
     |- resolution: {resolution}
     |- write dataframe: {config['write_dataframe']}
     |- number of classes: {config['n_classes']}
@@ -122,7 +128,7 @@ def conf_log(
 
 # __________Prepare objects___________#
 def prepare_tiles(
-    config: dict,
+    config: Config,
     stride: int,
 ) -> tuple[GeoDataFrame, dict, tuple[float, float]]:
     """Slicing extent for overlapping detection"""
@@ -150,15 +156,8 @@ def prepare_tiles(
 
 
 def prepare_data(
-    config: dict, stride: int
+    config: Config, stride: int
 ) -> tuple[Sliced_Dataset, DataLoader, GeoDataFrame, dict]:
-
-    channels = config["channels"]
-    norma_task = config["norma_task"]
-    batch_size = config["batch_size"]
-    num_worker = config["num_worker"]
-    input_img_path = config["input_img_path"]
-    img_pixels_detection = config["img_pixels_detection"]
 
     # slicing
     sliced_dataframe, profile, resolution = prepare_tiles(config, stride)
@@ -166,25 +165,25 @@ def prepare_data(
     # get dataset
     dataset = Sliced_Dataset(
         dataframe=sliced_dataframe,
-        img_path=input_img_path,
+        img_path=config["input_img_path"],
         resolution=resolution,
-        bands=channels,
-        patch_detection_size=img_pixels_detection,
-        norma_dict=norma_task,
+        bands=config["channels"],
+        patch_detection_size=config["img_pixels_detection"],
+        norma_dict=config["norma_task"],
     )
 
     # get Dataloader
     data_loader = DataLoader(
         dataset,
-        batch_size=batch_size,
-        num_workers=num_worker,
+        batch_size=config["batch_size"],
+        num_workers=config["num_worker"],
         pin_memory=True,
     )
 
     return dataset, data_loader, sliced_dataframe, profile
 
 
-def prepare_model(config: dict, device: torch.device) -> torch.nn.Module:
+def prepare_model(config: Config, device: torch.device) -> torch.nn.Module:
 
     print(
         f"""
@@ -205,36 +204,37 @@ def prepare_model(config: dict, device: torch.device) -> torch.nn.Module:
 
 
 def prepare_output(
-    config: dict,
+    config: Config,
     profile: dict,
     identifier: str = "",
 ) -> tuple[rasterio.io.DatasetWriter, str]:  # type: ignore
     """Prepare output raster profile and output path"""
 
     config, path_out = setup_indiv_path(config, identifier)
-    output_type = config["output_type"]
-    n_classes = config["n_classes"]
+    size = config["img_pixels_detection"]
 
-    out_overall_profile = profile.copy()
-    out_overall_profile.update(
+    out_profile = profile.copy()
+    out_profile.update(
         {
             "dtype": "uint8",
             "compress": "LZW",
             "driver": "GTiff",
             "BIGTIFF": "YES",
             "tiled": True,
-            "blockxsize": config["img_pixels_detection"],
-            "blockysize": config["img_pixels_detection"],
+            "blockxsize": size,
+            "blockysize": size,
         }
     )
-    out_overall_profile["count"] = [2 if output_type == "argmax" else n_classes][0]
+    out_profile["count"] = [
+        2 if config["output_type"] == "argmax" else config["n_classes"][0]
+    ]
     # second band gives the max probability
-    out = rasterio.open(path_out, "w+", **out_overall_profile)
+    out = rasterio.open(path_out, "w+", **out_profile)
     return out, path_out
 
 
 # _________PIPELINES__________#
-def run_from_config(config: dict) -> None:
+def run_from_config(config: Config) -> None:
     """Run the pipeline from a config file"""
     # setting up device and log
     device, use_gpu = setup_device(config)
@@ -242,7 +242,7 @@ def run_from_config(config: dict) -> None:
     run_pipeline(config, device, use_gpu)
 
 
-def run_pipeline(config: dict, device: torch.device, use_gpu: bool) -> None:
+def run_pipeline(config: Config, device: torch.device, use_gpu: bool) -> None:
     """Works for a single input image"""
 
     # set up common output path
@@ -439,7 +439,7 @@ def run_pipeline(config: dict, device: torch.device, use_gpu: bool) -> None:
 
 
 def batch_metrics_pipeline(
-    config: dict, truth_dpt: Path, device: torch.device, use_gpu: bool
+    config: Config, truth_dpt: Path, device: torch.device, use_gpu: bool
 ) -> None:
     """
     Compute metrics for a batch of images.

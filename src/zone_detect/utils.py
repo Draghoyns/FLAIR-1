@@ -1,16 +1,23 @@
 import datetime
 import os
-from pathlib import Path
-import numpy as np
-import rasterio
-import torch
 import yaml
+
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+
+import rasterio
+
+import torch
 
 from src.zone_detect.test.tiles import get_stride
 
+Config = dict[str, Any]  # type alias for configuration dictionary
+
 
 #### CONFIG ####
-def read_config(args) -> dict:
+def read_config(args) -> Config:
     file_path = args.conf
     with open(file_path, "r") as f:
         config = yaml.safe_load(f)
@@ -23,7 +30,7 @@ def read_config(args) -> dict:
     return preprocess_config(config)
 
 
-def preprocess_config(config: dict) -> dict:
+def preprocess_config(config: Config) -> Config:
     """Clean the config file by formatting correctly
     and raising obvious errors before any run."""
 
@@ -94,7 +101,7 @@ def preprocess_config(config: dict) -> dict:
     return config
 
 
-def check_list_type(lst: list, expected_type: type) -> list:
+def check_list_type(lst: list[Any], expected_type: type) -> list[Any]:
     res = lst
     if isinstance(lst, expected_type):
         res = [lst]
@@ -108,7 +115,7 @@ def check_list_type(lst: list, expected_type: type) -> list:
     return res
 
 
-def gen_param_combination(config: dict) -> list:
+def gen_param_combination(config: Config) -> list[dict[str, Any]]:
     """Generate all possible combinations of parameters.
     Handles single case or iterative case."""
     combi = []
@@ -168,7 +175,7 @@ def gen_param_combination(config: dict) -> list:
     return combi
 
 
-def extract_method(method: str, info: dict = {}) -> dict:
+def extract_method(method: str, info: dict = {}) -> Config:
     """Extract the method parameters from the method name."""
     elements = method.split("_")
     for param in elements:
@@ -189,7 +196,7 @@ def extract_method(method: str, info: dict = {}) -> dict:
     return info
 
 
-def info_extract(file: Path) -> dict:
+def info_extract(file: Path) -> dict[str, Any]:
     """Extract the information from the filename, namely the region and the method used.
     Args:
         filename (Path): the filename to extract the information from. Should be full path.
@@ -221,7 +228,7 @@ def info_extract(file: Path) -> dict:
 
 
 #### SETUP ####
-def setup_out_path(config: dict) -> dict:
+def setup_out_path(config: Config) -> Config:
     """Setup the output directory"""
     output = Path(config["output_path"])
     output.mkdir(parents=True, exist_ok=True)
@@ -239,7 +246,7 @@ def setup_out_path(config: dict) -> dict:
     return config
 
 
-def setup_device(config: dict) -> tuple[torch.device, bool]:
+def setup_device(config: Config) -> tuple[torch.device, bool]:
     """Setup the device"""
 
     use_gpu = False if torch.cuda.is_available() is False else config["use_gpu"]
@@ -248,7 +255,7 @@ def setup_device(config: dict) -> tuple[torch.device, bool]:
     return device, use_gpu
 
 
-def setup(args) -> tuple[dict, torch.device, bool]:
+def setup(args) -> tuple[Config, torch.device, bool]:
     """Setup the device"""
     config = read_config(args)
     device, use_gpu = setup_device(config)
@@ -256,7 +263,7 @@ def setup(args) -> tuple[dict, torch.device, bool]:
     return config, device, use_gpu
 
 
-def setup_indiv_path(config: dict, identifier: str) -> tuple[dict, str]:
+def setup_indiv_path(config: Config, identifier: str) -> tuple[Config, str]:
     """Setup the output path for individual images"""
 
     out_name = config["output_name"] + identifier
@@ -282,7 +289,9 @@ def setup_indiv_path(config: dict, identifier: str) -> tuple[dict, str]:
         raise error  # avoid silent failure
 
 
-def open_images(config: dict, local_out: Path, get_truth: bool):
+def open_images(
+    config: Config, local_out: Path, get_truth: bool
+) -> tuple[np.ndarray, Path]:
     """Get the input image array and the ground truth if necessary."""
 
     if get_truth:

@@ -1,17 +1,22 @@
 from pathlib import Path
-import matplotlib.pyplot as plt
-import numpy as np
-import rasterio
+from typing import Tuple
 import yaml
 
-from src.zone_detect.utils import preprocess_config
+import matplotlib.pyplot as plt
+import numpy as np
+
+import rasterio
+
 from src.zone_detect.test.tests import *
+from src.zone_detect.utils import preprocess_config
+
+Coordinate = Tuple[int, int, int, int]
 
 
 def geogr_patches(
     in_img: str | Path,
-    patches: list[tuple[int, int, int, int]],
-) -> list[tuple[float, float, float, float]]:
+    patches: list[Coordinate],
+) -> list[tuple[float, ...]]:
     """Generate patches for a given image size."""
 
     # geo conversion
@@ -58,7 +63,7 @@ def geogr_patches(
 
 def ground_truth_geoconv(
     in_img: str | Path, patch_size: int, margin: int, stride: int
-) -> list[tuple[float, float, float, float]]:
+) -> list[tuple[float, ...]]:
     with rasterio.open(in_img) as src:
         left_overall, bottom_overall, right_overall, top_overall = src.bounds
         resolution = abs(round(src.res[0], 5)), abs(round(src.res[1], 5))

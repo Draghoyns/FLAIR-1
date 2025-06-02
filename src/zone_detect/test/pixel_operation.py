@@ -1,15 +1,20 @@
+from typing import Tuple
+
+Coordinate = Tuple[int, int, int, int]
+
+
 def slice_pixels(
     img_size: tuple[int, int],
     patch_size: int,
     margin: int,
     stride: int,
-) -> list[tuple[int, int, int, int]]:
+) -> list[Coordinate]:
     """
     Generate patches for a given image size.
     The patches are the small boxes where the margins were removed.
     They will be added for inference inside the slice_geo function."""
 
-    def _add_patch_if_valid(patches, x_min, y_min):
+    def _add_patch_if_valid(patches: set[Coordinate], x_min: int, y_min: int):
         x_max = x_min + patch_size
         y_max = y_min + patch_size
         if x_max <= x_size and y_max <= y_size:

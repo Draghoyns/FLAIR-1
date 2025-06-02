@@ -1,11 +1,13 @@
-import numpy as np
-import torch
-import rasterio.windows
 import geopandas as gpd
+import numpy as np
 
+import torch
 from torch.utils.data import Dataset
+
 from skimage.util import img_as_float
+
 from rasterio.enums import Resampling
+import rasterio.windows
 
 
 def convert(img: np.ndarray, img_type: str) -> np.ndarray:
