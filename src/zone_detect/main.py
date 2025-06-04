@@ -16,15 +16,19 @@ from pytorch_lightning.utilities.rank_zero import rank_zero_only  # type: ignore
 
 import rasterio
 
+import onnxruntime
+
 import torch
 from torch.utils.data import DataLoader
 
-from src.zone_detect.compare import inference, stitching
 from src.zone_detect.dataset import Sliced_Dataset
+from src.zone_detect.inference import inference
 from src.zone_detect.model import load_model
 from src.zone_detect.slicing_job import slice_extent, slice_extent_separate
+from src.zone_detect.stitching_job import stitching
 
 from src.zone_detect.test.metrics import batch_metrics, compute_metrics_patch
+from src.zone_detect.test.onnx.onnx_export import get_onnx_path
 from src.zone_detect.test.tiles import get_stride
 
 from src.zone_detect.utils import (
@@ -52,6 +56,9 @@ argParser.add_argument(
 argParser.add_argument("-m", "--metrics", action="store_true", help="compute metrics")
 argParser.add_argument(
     "-b", "--batch_mode", action="store_true", help="run on a batch of input images"
+)
+argParser.add_argument(
+    "-o", "--onnx", action="store_true", help="use ONNX model instead of PyTorch"
 )
 
 
@@ -183,24 +190,54 @@ def prepare_data(
     return dataset, data_loader, sliced_dataframe, profile
 
 
-def prepare_model(config: Config, device: torch.device) -> torch.nn.Module:
-
+def prepare_model(config: Config, device: torch.device) -> tuple[str, dict[str, Any]]:
     print(
         f"""
     ##############################################
     ZONE DETECTION
     ##############################################
-
-    CUDA available? {torch.cuda.is_available()}"""
+    """
     )
 
-    ## loading model and weights
-    model = load_model(config)
-    model.eval()
-    model = model.to(device)
-    print(f"""    [x] loaded model and weights...""")
+    onnx = config["onnx"]
+    arg_package = dict()
 
-    return model
+    if onnx:
+        model_type = "onnx"
+        print(f"""    [ ] using ONNX model...""")
+
+        # get existing path or export
+        path = get_onnx_path(config)
+        ort_session = onnxruntime.InferenceSession(
+            path, providers=["CPUExecutionProvider"]
+        )
+
+        arg_package.update(
+            {
+                "ort_session": ort_session,
+            }
+        )
+
+    else:
+        model_type = "pytorch"
+        print(
+            f"""    [ ] using PyTorch model...
+
+        CUDA available? {torch.cuda.is_available()}
+        """
+        )
+
+        ## loading model and weights
+        model = load_model(config)
+        model.eval()
+        model = model.to(device)
+        print(f"""    [x] loaded model and weights...""")
+
+        arg_package.update(
+            {"model": model, "device": device, "use_gpu": config["use_gpu"]}
+        )
+
+    return model_type, arg_package
 
 
 def prepare_output(
@@ -225,10 +262,12 @@ def prepare_output(
             "blockysize": size,
         }
     )
-    out_profile["count"] = [
-        2 if config["output_type"] == "argmax" else config["n_classes"][0]
-    ]
+    out_profile["count"] = (
+        2 if config["output_type"] == "argmax" else config["n_classes"]
+    )
+
     # second band gives the max probability
+
     out = rasterio.open(path_out, "w+", **out_profile)
     return out, path_out
 
@@ -264,7 +303,7 @@ def run_pipeline(config: Config, device: torch.device, use_gpu: bool) -> None:
     print(f"    [LOGGER] Writing logs to: {log_filename}")
 
     # model
-    model = prepare_model(config, device)
+    model_type, model_args = prepare_model(config, device)
 
     # setup elements for the metrics
     truth_array, metrics_json = open_images(
@@ -319,10 +358,9 @@ def run_pipeline(config: Config, device: torch.device, use_gpu: bool) -> None:
             for samples in tqdm(data_loader):
 
                 predictions, indices = inference(
-                    device=device,
-                    model=model,
-                    use_gpu=use_gpu,
+                    model_type=model_type,
                     config=config,
+                    args=model_args,
                     samples=samples,
                 )
                 # writing windowed raster to output raster
@@ -399,9 +437,8 @@ def run_pipeline(config: Config, device: torch.device, use_gpu: bool) -> None:
         for samples in tqdm(data_loader):
 
             predictions, indices = inference(
-                device=device,
-                model=model,
-                use_gpu=use_gpu,
+                model_type=model_type,
+                args=model_args,
                 config=config,
                 samples=samples,
             )
