@@ -14,7 +14,7 @@ from rasterio.windows import Window
 
 from sklearn.metrics import confusion_matrix
 
-from src.zone_detect.test.pixel_operation import slice_pixels
+from src.zone_detect.slicing_job import slice_pixels
 from src.zone_detect.utils import extract_method, info_extract
 
 Config = dict[str, Any]  # type alias for configuration dictionary

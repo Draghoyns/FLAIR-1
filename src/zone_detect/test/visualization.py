@@ -4,7 +4,7 @@ from matplotlib.colors import Normalize
 from matplotlib.patches import Rectangle
 import matplotlib.pyplot as plt
 
-from src.zone_detect.test.pixel_operation import slice_pixels
+from src.zone_detect.slicing_job import slice_pixels
 from src.zone_detect.test.tiles import total_weights
 
 

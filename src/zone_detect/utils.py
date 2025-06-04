@@ -26,6 +26,7 @@ def read_config(args) -> Config:
     config["metrics"] = args.metrics
     config["batch_mode"] = args.batch_mode
     config["compare"] = args.compare
+    config["onnx"] = args.onnx
 
     return preprocess_config(config)
 

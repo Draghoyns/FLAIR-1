@@ -3,8 +3,6 @@ import numpy as np
 
 from typing import Any
 
-import torch
-
 from rasterio.features import geometry_window
 from rasterio.io import DatasetWriter
 from rasterio.windows import Window
@@ -18,28 +16,6 @@ from src.zone_detect.test.tiles import (
     total_weights,
     out_of_bounds,
 )
-
-
-def inference(
-    device: torch.device,
-    model: torch.nn.Module,
-    use_gpu: bool,
-    config: dict[str, Any],
-    samples: dict[str, torch.Tensor],
-) -> tuple[np.ndarray, np.ndarray]:
-    imgs = samples["image"].to(device, non_blocking=(device.type == "cuda"))
-    if use_gpu:
-        torch.cuda.synchronize()
-    with torch.no_grad():
-        logits = model(imgs)
-        if config.get("model_framework", {}).get("model_provider") == "HuggingFace":
-            logits = logits.logits
-        logits.to(device)
-    predictions = torch.softmax(logits, dim=1)
-    predictions = predictions.cpu().numpy()
-    indices = samples["index"].cpu().numpy()
-
-    return predictions, indices
 
 
 def stitching(
