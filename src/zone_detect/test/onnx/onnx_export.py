@@ -5,11 +5,12 @@ from typing import Any
 import rasterio
 from rasterio.enums import Resampling
 import rasterio.windows
+from typing import Optional
 
 from scipy.special import softmax
 
 import torch
-from torch.onnx import export
+from torch.onnx import export, ONNXProgram
 import onnx
 import onnxruntime
 from onnxsim import simplify
@@ -34,10 +35,11 @@ def check_export_onnx(onnx_path: Path):
         print("ONNX model is well formed, whatever that means.")
 
 
-def export_onnx_hf(config: dict[str, Any], save_directory: Path, out_name: str = ""):
+def export_onnx(config: dict[str, Any], out_name: str = "opti"):
     """
     Export a HuggingFace model to ONNX format.
     """
+    save_directory = Path(config["model_weights"]).parent
 
     model_name = config["model_framework"]["HuggingFace"]["org_model"]
     filename = f"{model_name}_{out_name}.onnx" if out_name else f"{model_name}.onnx"
@@ -60,26 +62,39 @@ def export_onnx_hf(config: dict[str, Any], save_directory: Path, out_name: str =
     dummy_input = (torch.randn(batch_size, n_bands, patch_size, patch_size),)
 
     with torch.no_grad():
-        onnx_export = export(model, dummy_input, dynamo=True, do_constant_folding=True)
+        onnx_export = export(
+            model,
+            dummy_input,
+            do_constant_folding=True,
+            dynamo=True,
+        )
 
         if onnx_export is not None:
             if out_name == "opti":
                 onnx_export.optimize()
 
-            onnx_export.save(output_path)
+            # simplify with ORT
+            simp_onnx_path = simplify_onnx(output_path, onnx_export)
+
             print(f"Model exported to ONNX format to {output_path}")
+            check_export_onnx(simp_onnx_path)
         else:
             print("ONNX export failed.")
+            simp_onnx_path = output_path
 
-    check_export_onnx(output_path)
-
-    return output_path
+    return simp_onnx_path
 
 
 def get_onnx_path(config: dict[str, Any]) -> Path:
 
     model_name = config["model_framework"]["HuggingFace"]["org_model"]
-    onnx_path = Path(config["model_weights"]).parent / f"{model_name}.onnx"
+    model_names = model_name.split("/")  # Get the last part of the model name
+    # e.g. "openmmlab/upernet-swin-small" -> "upernet-swin-small"
+    onnx_path = (
+        Path(config["model_weights"]).parent
+        / model_names[0]
+        / f"simplified_{model_names[-1]}_opti.onnx"
+    )
 
     if not onnx_path.exists():
         print(f"ONNX model not found at {onnx_path}. Exporting...")
@@ -88,32 +103,12 @@ def get_onnx_path(config: dict[str, Any]) -> Path:
     return onnx_path
 
 
-def export_onnx(config) -> Path:
-    # if no onnx model provided, export the model to onnx and save it
-    # otherwise load the onnx model from the provided path
-
-    # all info in config
-
-    save_directory = Path(config["model_weights"]).parent
-
-    # sound export with torch optimization
-    onnx_model_path = export_onnx_hf(
-        config=config,
-        save_directory=save_directory,
-    )
-
-    # simplify with ORT
-    simp_onnx = simplify_onnx(onnx_model_path)
-
-    return simp_onnx
-
-
 #### ONNX inference ####
 # _____________________#
 
 
 def inference_onnx(
-    model_path: Path, ort_session: onnxruntime.InferenceSession, img: torch.Tensor
+    ort_session: onnxruntime.InferenceSession, img: torch.Tensor
 ) -> np.ndarray:
     """Perform inference using ONNX Runtime.
     Args:
@@ -199,7 +194,7 @@ def compare_to_pytorch(
 
     ort_session = onnxruntime.InferenceSession(onnx_model_path)
 
-    onnx_outputs = inference_onnx(onnx_model_path, ort_session, input_tensor)
+    onnx_outputs = inference_onnx(ort_session, input_tensor)
 
     """
     print(f"PyTorch output type: {type(predictions)}")
@@ -283,20 +278,22 @@ def patch_constant_nodes(model: onnx.ModelProto) -> onnx.ModelProto:
 
     model.graph.ClearField("node")
     model.graph.node.extend(new_nodes)
-    # onnx.save(model, str(patched_path))
     print(f"✅ Patched model")
 
     return model
 
 
-def simplify_onnx(onnx_path: Path) -> Path:
+def simplify_onnx(onnx_path: Path, onnx_program: Optional[ONNXProgram] = None) -> Path:
     """
     Simplify the ONNX model using onnx-simplifier
     Returns the simplified model, which can be used as a standard ONNX model object.
     """
 
     # convert model
-    model = onnx.load(onnx_path)
+    if onnx_program is None:
+        model = onnx.load(onnx_path)
+    else:
+        model = onnx_program.model_proto
 
     # fix missing value attribute in Constant nodes
     model = patch_constant_nodes(model)
@@ -356,7 +353,7 @@ if __name__ == "__main__":
     # Export the HuggingFace model to ONNX
     out_opti = "opti"
     out_simple = "not-opti"
-    onnx_opti = export_onnx_hf(config, Path(save_directory), out_name=out_opti)
+    onnx_opti = export_onnx(config, out_name=out_opti)
     # onnx_simple = export_onnx_hf(config, Path(save_directory), out_name=out_simple)
 
     input_img = "/media/DATA/INFERENCE_HS/DATA/dataset_zone_last/ortho/D037_2021/UU_S1_4/037_2021_UU_S1_4_IRC.tif"
