@@ -543,7 +543,7 @@ def batch_metrics_pipeline(
 # __________Main function___________#
 def main():
 
-    tracker = OfflineEmissionsTracker(country_iso_code="FRA")
+    tracker = OfflineEmissionsTracker(country_iso_code="FRA", measure_power_secs=1e9)
     tracker.start()
 
     # reading yaml
