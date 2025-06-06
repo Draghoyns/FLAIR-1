@@ -16,7 +16,7 @@ from pytorch_lightning.utilities.rank_zero import rank_zero_only  # type: ignore
 
 import rasterio
 
-import onnxruntime
+import onnxruntime as ort
 
 import torch
 from torch.utils.data import DataLoader
@@ -206,11 +206,11 @@ def prepare_model(config: Config, device: torch.device) -> tuple[str, dict[str, 
         model_type = "onnx"
         print(f"""    [ ] using ONNX model...""")
 
+        providers = {"gpu": "CUDAExecutionProvider", "cpu": "CPUExecutionProvider"}
+
         # get existing path or export
         path = get_onnx_path(config)
-        ort_session = onnxruntime.InferenceSession(
-            path, providers=["CPUExecutionProvider"]
-        )
+        ort_session = ort.InferenceSession(path, providers=[providers["gpu"]])
 
         arg_package.update(
             {

@@ -62,11 +62,6 @@ def inference_onnx(
     # onnx_inputs = [np.expand_dims(tensor.numpy(), axis=0) for tensor in imgs]
     onnx_inputs = imgs.numpy()
 
-    # print debug information
-    # print(f"ONNX inputs: {[input.shape for input in onnx_inputs]}")
-
-    # onnxruntime_input = { input_arg.name: input_value for input_arg, input_value in zip(ort_session.get_inputs(), onnx_inputs) }
-
     onnxruntime_input = {ort_session.get_inputs()[0].name: onnx_inputs}
 
     logits = ort_session.run(None, onnxruntime_input)[0]
