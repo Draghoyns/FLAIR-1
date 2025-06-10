@@ -486,7 +486,7 @@ def batch_metrics_pipeline(
     """
 
     out_json = config["metrics_out"]
-    data_type = config["data_type"]
+    data_type = config["data_type"]  # IRC, RVB etc.
     file_pattern = f"*{data_type}.tif"
     compute_metrics = config["metrics"]
 
@@ -505,6 +505,7 @@ def batch_metrics_pipeline(
         if img_path is None:
             continue
 
+        # set up config for the current image
         if compute_metrics:
             dpt, zone = img_path.parts[-3:-1]
             truth_dir = truth_dpt / zone
@@ -555,6 +556,19 @@ def main():
     if args.batch_mode:
         gt_dir = Path(config["truth_root"])
         gt_dpt = gt_dir / Path(config["truth_path"]).parts[-3]
+
+        model_nickname = config["model_name"].split("-")[-1]
+        model_type = "onnx" if args.onnx else "pytorch"
+        device_type = "gpu" if use_gpu else "cpu"
+
+        new_folder = f"{model_nickname}_{model_type}_{device_type}"
+
+        config.update(
+            {
+                "output_path": config["local_out"] / new_folder,
+                "metrics_out": config["local_out"] / new_folder / "metrics.json",
+            }
+        )
 
         batch_metrics_pipeline(config, gt_dpt, device, use_gpu)
     else:
