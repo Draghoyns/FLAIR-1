@@ -1,6 +1,7 @@
 import datetime
 import json
 from tqdm import tqdm
+import wandb
 
 from pathlib import Path
 from typing import Any
@@ -449,60 +450,227 @@ def error_rate_patch(
 
 
 #### ANALYSIS ####
-def load_metrics_json(json_path: Path) -> dict:
+def load_metrics_json(json_path: Path) -> list[dict]:
     with open(json_path, "r") as f:
         data = json.load(f)
     return data
 
 
-def flatten_metrics(metrics: dict) -> pd.DataFrame:
+# last test and update : 20250606
+def flatten_metrics(metrics_dict: list[dict]) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
     Flatten the metrics dictionary into a pandas DataFrame.
+    Returns two DataFrames:
+    - flat_metrics: contains the metrics for each method
+    - method_info: contains the method parameters and values
     """
     flat_metrics = []
-    for key, value in metrics.items():
+    method_info = []
+
+    for method_id in range(len(metrics_dict)):
+        method = metrics_dict[method_id]
+        info = {"id": method_id}
+
+        # Extract method parameters and values
+        method_names = method.get("Method parameters", [])
+        method_values = method.get("Parameters values", [])
+        for name, value in zip(method_names, method_values):
+            info.update({name: value})
+        method_info.append(info)
+
+        # Extract avg metrics
+        avg_metrics_names = method.get("Avg_metrics_name", [])
+        avg_metrics_values = method.get("Avg_metrics", [])
+
+        for name, value in zip(avg_metrics_names, avg_metrics_values):
+            flat_metrics.append({"id": method_id, "metric": name, "value": value})
+
+        # Extract class metrics
+        per_class_iou = method.get("per_class_iou", [])
+        per_class_fscore = method.get("per_class_fscore", [])
         flat_metrics.append(
             {
-                "key": key,
-                **{
-                    k: v
-                    for k, v in value.items()
-                    if k not in ["Avg_metrics_name", "Avg_metrics"]
-                },
+                "id": method_id,
+                "metric": "per_class_iou",
+                "value": per_class_iou,
             }
         )
-    return pd.DataFrame(flat_metrics)
+        flat_metrics.append(
+            {
+                "id": method_id,
+                "metric": "per_class_fscore",
+                "value": per_class_fscore,
+            }
+        )
+
+    return pd.DataFrame(flat_metrics), pd.DataFrame(method_info)
 
 
-def analyze_param(df: pd.DataFrame, param: str, metric: str) -> pd.DataFrame:
+def flatten_as_dict(
+    metrics_dict: list[dict], sort_per_param: str
+) -> list[dict[str, Any]]:
+    """
+    Flatten the metrics dictionary into a list of dictionaries.
+    Each dictionary contains the method parameters and the metrics.
+    Args:
+        metrics_dict (list[dict]): List of dictionaries containing the metrics for each method.
+        sort_per_param (str): Parameter to sort the flattened metrics by. If empty, no sorting is applied.
+    Returns:
+        flattened (list[dict[str, Any]]): Flattened metrics.
+    """
+
+    flattened = []
+
+    for method in metrics_dict:
+        flat = {}
+
+        # Flatten parameters
+        for k, v in zip(method["Method parameters"], method["Parameters values"]):
+            flat[f"param/{k}"] = v
+
+        # Flatten avg metrics
+        for k, v in zip(method["Avg_metrics_name"], method["Avg_metrics"]):
+            flat[f"avg/{k}"] = v
+
+        # Flatten class-level IoU and Fscore
+        classes = method["classes"]
+        for cls, iou in zip(classes, method["per_class_iou"]):
+            flat[f"class/{cls}/iou"] = iou
+        for cls, fscore in zip(classes, method["per_class_fscore"]):
+            flat[f"class/{cls}/fscore"] = fscore
+
+        flattened.append(flat)
+
+    # Sort by a specific parameter if provided
+    if sort_per_param:
+        # Allow for secondary sorting by accepting a tuple, e.g., "patch size,stride"
+        params = [p.strip() for p in sort_per_param.split(",")]
+        if len(params) == 1:
+            flattened.sort(key=lambda x: x.get(f"param/{params[0]}", 0))
+        else:
+            flattened.sort(key=lambda x: tuple(x.get(f"param/{p}", 0) for p in params))
+
+    return flattened
+
+
+def analyze_param(
+    data: tuple[pd.DataFrame, pd.DataFrame], param: str, metric: str
+) -> pd.DataFrame:
     """
     Analyze the metrics for a given parameter.
     """
-    # filter the dataframe for the given parameter
-    df = df[df["key"].str.contains(param)]
-    # extract the parameter values
-    df[param] = df["key"].str.extract(rf"{param}=(\d+)")
-    # convert to numeric
-    df[param] = pd.to_numeric(df[param])
+
+    if metric in ["per_class_iou", "per_class_fscore"]:
+        raise ValueError(
+            f"Metric {metric} is not supported for parameter analysis. Use average metrics instead."
+        )
+
+    df, method_info = data
+
+    # map parameter to metric value
+    # then group by parameter and compute the mean of the metric
+    if param not in method_info.columns:
+        raise ValueError(f"Parameter {param} not found in method info DataFrame.")
+    # keep interesting metric
+    df = df[df["metric"] == metric]
+    df = df.merge(method_info, on="id", how="left")  # overkill ?
+
     # group by parameter and compute the mean of the metric
-    df = df.groupby(param).agg({metric: "mean"}).reset_index()
+    if param in df.columns:
+        df = df.groupby(param).agg({"value": "mean"}).reset_index()
+    else:
+        raise ValueError(f"Parameter {param} not found in the DataFrame.")
+
     return df
 
 
-def plot_metrics(df: pd.DataFrame, param: str, metric: str) -> None:
+def plot_metrics(df: pd.DataFrame, param: str, metric: str, title: str = "") -> None:
     """
     Plot the metrics for a given parameter.
     """
+
+    print(f"Plotting {metric} vs {param}...")
+    print(f"DataFrame: {df.head()}")  # Debugging line to check the DataFrame
+
     plt.figure(figsize=(10, 5))
-    plt.plot(df[param], df[metric], marker="o")
+    plt.plot(df[param], df["value"], marker="o", color="r")
     plt.xlabel(param)
     plt.ylabel(metric)
-    plt.title(f"{metric} vs {param}")
-    plt.grid()
+    plt.title(f"{metric} vs {param} for {title}" if title else f"{metric} vs {param}")
+    plt.xticks(rotation=45)
     plt.show()
     plt.savefig(f"{param}_{metric}.png")
     plt.close()
     print(f"Plot saved to {param}_{metric}.png")
+
+
+def analyze_metrics(json_path: Path) -> None:
+    """
+    Load the metrics from a JSON file, analyze them and save the results.
+    """
+
+    title = str(json_path.parent)
+
+    metrics = load_metrics_json(json_path)
+    flat = flatten_metrics(metrics)
+    df, method_info = flat
+
+    # analyze the parameters
+    params = ["patch size", "margin"]
+    metrics_to_analyze = [
+        "mIoU",
+        "Overall Accuracy",
+        "Fscore",
+        "Time in ms",
+        "per_class_iou",
+        "per_class_fscore",
+    ]
+
+    for param in params:
+        for metric in metrics_to_analyze:
+
+            # print(f"List of metrics: {df['metric']}")
+
+            if metric in df["metric"].unique():
+                analyzed_df = analyze_param(flat, param, metric)
+                plot_metrics(analyzed_df, param, metric, title=title)
+            else:
+                print(f"Metric {metric} not found in the dataframe.")
+
+    print("Analysis completed. Check the plots for results.")
+
+
+def log_to_WB(metrics_path: Path, sort_per_param: str = "") -> None:
+    """Log the metrics to Weights & Biases (W&B) for visualization and tracking.
+    Args:
+        metrics_path (Path): Path to the metrics JSON file.
+        sort_per_param (str): Parameter to sort the flattened metrics by. If empty, no sorting is applied.
+            -  model name, patch size, stride, margin, padding, stitching method
+    """
+
+    name = metrics_path.parent.name
+
+    metrics_dict = load_metrics_json(metrics_path)
+    flattened = flatten_as_dict(metrics_dict, sort_per_param)
+
+    # config = {}
+    # for parameters that do not change, , like
+    # model name, model type (onnx, pt), device
+    # decomposition of path into config
+    name_elements = name.split("_")[-3:]
+    config = {
+        "model_name": name_elements[0],
+        "model_type": name_elements[1],
+        "device": name_elements[2],
+    }
+
+    wandb.init(project="semantic-segmentation-eval", config=config, name=name)
+    # Log to W&B (each method = one step)
+
+    for flat in flattened:
+        wandb.log(flat)
+
+    wandb.finish()
 
 
 if __name__ == "__main__":
@@ -512,4 +680,10 @@ if __name__ == "__main__":
     out_dir = "/media/DATA/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out2025020/error_rate_margin=0_swin_RVB"
     pred_dir = "/media/DATA/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out20250520_swin_RVB_last"
 
-    error_rate_loop(Path(truth_dir), Path(out_dir), Path(pred_dir))
+    # error_rate_loop(Path(truth_dir), Path(out_dir), Path(pred_dir))
+
+    metrics_path = "/media/DATA/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out20250523/small_pytorch_gpu/metrics.json"
+
+    # analyze_metrics((Path(metrics_path)))
+
+    log_to_WB(Path(metrics_path), sort_per_param="patch size, margin")

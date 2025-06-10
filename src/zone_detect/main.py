@@ -565,8 +565,8 @@ def main():
 
         config.update(
             {
-                "output_path": config["local_out"] / new_folder,
-                "metrics_out": config["local_out"] / new_folder / "metrics.json",
+                "output_path": f"{config['output_path']}/{new_folder}",
+                "metrics_out": f"{config['output_path']}/{new_folder}/metrics.json",
             }
         )
 

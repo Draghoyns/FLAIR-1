@@ -137,3 +137,6 @@ dmypy.json
 .vscode/
 
 credentials copy.json
+
+# Weights and Biases files
+wandb/
