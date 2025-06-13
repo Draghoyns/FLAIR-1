@@ -69,7 +69,11 @@ def collect_paths_truth(config: Config, truth_dir: Path) -> pd.DataFrame:
     path_collection = []
 
     # get predictions
-    pred_dir = Path(config["output_path"])
+    if "local_out" not in config:
+        pred_dir = Path(config["output_path"])
+    else:
+        pred_dir = Path(config["local_out"]).parent
+        # manual fix, paths should be handled more cleanly
     timed_folders = [p for p in pred_dir.iterdir() if p.is_dir()]
 
     # dataframe with pred path, gt path and method single string
@@ -200,8 +204,7 @@ def compute_metrics_patch(
 
 
 def batch_metrics(config: Config, truth_dir: Path) -> list[dict[str, Any]]:
-    """Compute metrics for each method in the batch mode.
-    The metrics are computed for the whole image, not per patch.
+    """Compute metrics for each method in the batch mode. The metrics are computed for the whole image, not per patch. Computation is based on the image files.
     Args:
         config (dict): Configuration, in which the parameters for the inference are specified
         truth_dir (Path): Path to the ground truth directory.
@@ -249,8 +252,29 @@ def batch_metrics(config: Config, truth_dir: Path) -> list[dict[str, Any]]:
             ovr_acc = overall_accuracy(confmat_cleaned)
             per_c_fscore, avg_fscore = class_fscore(confmat_cleaned)
 
+            # get timings
             method_times = config.get("times", {}).get(method, [])
-            avg_time = np.mean(method_times) if method_times else 0
+            # dict of str : list of float
+            avg_data_prep = (
+                np.mean(method_times["data_prep_time"])
+                if "data_prep_time" in method_times
+                else 0
+            )
+            avg_inference = (
+                np.mean(method_times["pure_infer_time"])
+                if "pure_infer_time" in method_times
+                else 0
+            )
+            avg_write = (
+                np.mean(method_times["data_write_time"])
+                if "data_write_time" in method_times
+                else 0
+            )
+            avg_time = (
+                np.mean(method_times["total_time"])
+                if "total_time" in method_times
+                else 0
+            )
 
         # method parameters
         info = extract_method(str(method))
@@ -278,11 +302,22 @@ def batch_metrics(config: Config, truth_dir: Path) -> list[dict[str, Any]]:
                 padding,
                 stitching,
             ],
-            "Avg_metrics_name": ["mIoU", "Overall Accuracy", "Fscore", "Time in ms"],
+            "Avg_metrics_name": [
+                "mIoU",
+                "Overall Accuracy",
+                "Fscore",
+                "Data preparation time in ms",
+                "Inference time in ms",
+                "Data writing time in ms",
+                "Total time in ms",
+            ],
             "Avg_metrics": [
                 avg_ious,
                 ovr_acc,
                 avg_fscore,
+                avg_data_prep,
+                avg_inference,
+                avg_write,
                 avg_time,
             ],
             "classes": [classes[i][1] for i in range(1, n_classes + 1)],
@@ -545,7 +580,7 @@ if __name__ == "__main__":
 
     # error_rate_loop(Path(truth_dir), Path(out_dir), Path(pred_dir))
 
-    metrics_path = "/media/DATA/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out20250523/small_pytorch_gpu/metrics.json"
+    metrics_path = "/media/DATA/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out20250612/small_pytorch_gpu_512_1024/metrics.json"
 
     # analyze_metrics((Path(metrics_path)))
 
