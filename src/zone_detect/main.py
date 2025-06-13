@@ -276,12 +276,12 @@ def prepare_output(
 def run_from_config(config: Config) -> None:
     """Run the pipeline from a config file"""
     # setting up device and log
-    device, use_gpu = setup_device(config)
+    device, _ = setup_device(config)
 
-    run_pipeline(config, device, use_gpu)
+    run_pipeline(config, device)
 
 
-def run_pipeline(config: Config, device: torch.device, use_gpu: bool) -> None:
+def run_pipeline(config: Config, device: torch.device) -> None:
     """Works for a single input image"""
 
     # set up common output path
@@ -321,7 +321,7 @@ def run_pipeline(config: Config, device: torch.device, use_gpu: bool) -> None:
         settings = gen_param_combination(config)
         for combi in settings:
 
-            method_metrics = []
+            method_metrics_per_patch = []
 
             img_pixels_detection = combi["img_pixels_detection"]
             margin = combi["margin"]
@@ -343,19 +343,30 @@ def run_pipeline(config: Config, device: torch.device, use_gpu: bool) -> None:
             identifier = "_" + method
 
             # start timer
-            start_time = datetime.datetime.now()
+            timer_data = datetime.datetime.now()
 
             dataset, data_loader, sliced_dataframe, profile = prepare_data(
                 config, stride
             )
+            config["nb_patches"] = len(sliced_dataframe)
+            data_prep_time = (
+                datetime.datetime.now() - timer_data
+            ).total_seconds() * 1000  # ms
+
             # prepare output raster
             out, path_out = prepare_output(
                 config,
                 profile,
                 identifier,
             )
+
+            pure_infer_time = 0  # ms
+            data_write_time = 0  # ms
+
             print(f"""    [ ] starting inference...\n""")
             for samples in tqdm(data_loader):
+
+                timer_start = datetime.datetime.now()
 
                 predictions, indices = inference(
                     model_type=model_type,
@@ -363,7 +374,13 @@ def run_pipeline(config: Config, device: torch.device, use_gpu: bool) -> None:
                     args=model_args,
                     samples=samples,
                 )
+
+                pure_infer_time += (
+                    datetime.datetime.now() - timer_start
+                ).total_seconds() * 1000  # ms
+
                 # writing windowed raster to output raster
+                timer_write = datetime.datetime.now()
                 for prediction, index in zip(predictions, indices):
 
                     # stitching method is handled inside
@@ -385,18 +402,14 @@ def run_pipeline(config: Config, device: torch.device, use_gpu: bool) -> None:
                             prediction,
                             window=window,
                         )
+                    data_write_time += (
+                        datetime.datetime.now() - timer_write
+                    ).total_seconds() * 1000  # ms
 
                     if compute_metrics:
                         # compute metrics per patch
-                        inference_time = (
-                            datetime.datetime.now() - start_time
-                        ).total_seconds() * 1000  # ms                        inference_time = inference_time.total_seconds()
-                        if method not in method_times:
-                            method_times[method] = [inference_time]
-                        else:
-                            method_times[method].append(inference_time)
 
-                        method_metrics.append(
+                        method_metrics_per_patch.append(
                             compute_metrics_patch(
                                 prediction,
                                 truth_array,
@@ -405,6 +418,22 @@ def run_pipeline(config: Config, device: torch.device, use_gpu: bool) -> None:
                                 method,
                             )
                         )
+            # end of loop on one method
+            total_time = (
+                datetime.datetime.now() - timer_data
+            ).total_seconds() * 1000  # ms
+            if method not in method_times:
+                method_times[method] = {
+                    "data_prep_time": [data_prep_time],
+                    "pure_infer_time": [pure_infer_time],
+                    "data_write_time": [data_write_time],
+                    "total_time": [total_time],
+                }
+            else:
+                method_times[method]["data_prep_time"].append(data_prep_time)
+                method_times[method]["pure_infer_time"].append(pure_infer_time)
+                method_times[method]["data_write_time"].append(data_write_time)
+                method_times[method]["total_time"].append(total_time)
 
             out.close()
             dataset.close_raster()  # type: ignore
@@ -415,13 +444,13 @@ def run_pipeline(config: Config, device: torch.device, use_gpu: bool) -> None:
 
             if compute_metrics:
                 config["times"] = method_times
+
+                with open(metrics_json, "w") as f:
+                    json.dump(method_metrics_per_patch, f, indent=2)
+
                 print(
                     f"""    [X] done writing metrics to {metrics_json.name} file.\n"""
                 )
-
-                with open(metrics_json, "w") as f:
-                    json.dump(method_metrics, f, indent=2)
-
     else:
 
         # default configuration : exact clipping and default sized tiling
@@ -476,7 +505,7 @@ def run_pipeline(config: Config, device: torch.device, use_gpu: bool) -> None:
 
 
 def batch_metrics_pipeline(
-    config: Config, truth_dpt: Path, device: torch.device, use_gpu: bool
+    config: Config, truth_dpt: Path, device: torch.device
 ) -> None:
     """
     Compute metrics for a batch of images.
@@ -523,7 +552,7 @@ def batch_metrics_pipeline(
         )
 
         # Inference and saving the predictions
-        run_pipeline(config, device, use_gpu)
+        run_pipeline(config, device)
 
     # we have all the predictions in the output folder
 
@@ -570,9 +599,9 @@ def main():
             }
         )
 
-        batch_metrics_pipeline(config, gt_dpt, device, use_gpu)
+        batch_metrics_pipeline(config, gt_dpt, device)
     else:
-        run_pipeline(config, device, use_gpu)
+        run_pipeline(config, device)
 
     emissions = tracker.stop()
 
