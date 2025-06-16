@@ -318,6 +318,7 @@ def run_pipeline(config: Config, device: torch.device) -> None:
     if compare:
 
         method_times = config.get("times", dict())
+        method_patches = config.get("nb_patches", dict())
 
         print(f"""    [ ] starting comparison...\n""")
 
@@ -355,7 +356,6 @@ def run_pipeline(config: Config, device: torch.device) -> None:
                 datetime.datetime.now() - timer_data
             ).total_seconds() * 1000  # ms
 
-            config["nb_patches"] = len(sliced_dataframe)
             single_area = sliced_dataframe["geometry"].area.sum()
 
             # prepare output raster
@@ -424,6 +424,7 @@ def run_pipeline(config: Config, device: torch.device) -> None:
                             )
                         )
             # end of loop on one method
+            ### timing
             total_time = (
                 datetime.datetime.now() - timer_data
             ).total_seconds() * 1000  # ms
@@ -440,6 +441,12 @@ def run_pipeline(config: Config, device: torch.device) -> None:
                 method_times[method]["data_write_time"].append(data_write_time)
                 method_times[method]["total_time"].append(total_time)
 
+            ### patches
+            if method not in method_patches:
+                method_patches[method] = [len(sliced_dataframe)]
+            else:
+                method_patches[method].append(len(sliced_dataframe))
+
             out.close()
             dataset.close_raster()  # type: ignore
 
@@ -449,6 +456,7 @@ def run_pipeline(config: Config, device: torch.device) -> None:
 
             if compute_metrics:
                 config["times"] = method_times
+                config["nb_patches"] = method_patches
 
                 with open(metrics_json, "w") as f:
                     json.dump(method_metrics_per_patch, f, indent=2)
@@ -564,9 +572,6 @@ def batch_metrics_pipeline(
 
         # Inference and saving the predictions
         run_pipeline(config, device)
-
-        n_patches += config["nb_patches"]
-    print(f"Total processed area: {config['processed_area']} m²")
 
     # we have all the predictions in the output folder
 
