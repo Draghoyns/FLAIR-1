@@ -1,5 +1,8 @@
+# This script computes the carbon emissions for a given dataset area
+# It is designed fora run with fixed parameters, as it is intended to be used
+
+
 import subprocess
-import sys
 from codecarbon import OfflineEmissionsTracker
 import rasterio
 from pathlib import Path
