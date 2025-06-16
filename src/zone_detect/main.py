@@ -201,6 +201,7 @@ def prepare_model(config: Config, device: torch.device) -> tuple[str, dict[str, 
 
     onnx = config["onnx"]
     arg_package = dict()
+    device_key = "gpu" if config["use_gpu"] else "cpu"
 
     if onnx:
         model_type = "onnx"
@@ -210,7 +211,7 @@ def prepare_model(config: Config, device: torch.device) -> tuple[str, dict[str, 
 
         # get existing path or export
         path = get_onnx_path(config)
-        ort_session = ort.InferenceSession(path, providers=[providers["gpu"]])
+        ort_session = ort.InferenceSession(path, providers=[providers[device_key]])
 
         arg_package.update(
             {
@@ -294,6 +295,8 @@ def run_pipeline(config: Config, device: torch.device) -> None:
     local_out = Path(config["local_out"])
     compute_metrics = config["metrics"]
 
+    processed_area = config.get("processed_area", 0.0)
+
     # log
     log_filename = local_out / Path(
         f"{config['output_name']}_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.log",
@@ -314,7 +317,7 @@ def run_pipeline(config: Config, device: torch.device) -> None:
 
     if compare:
 
-        method_times = {}
+        method_times = config.get("times", dict())
 
         print(f"""    [ ] starting comparison...\n""")
 
@@ -348,10 +351,12 @@ def run_pipeline(config: Config, device: torch.device) -> None:
             dataset, data_loader, sliced_dataframe, profile = prepare_data(
                 config, stride
             )
-            config["nb_patches"] = len(sliced_dataframe)
             data_prep_time = (
                 datetime.datetime.now() - timer_data
             ).total_seconds() * 1000  # ms
+
+            config["nb_patches"] = len(sliced_dataframe)
+            single_area = sliced_dataframe["geometry"].area.sum()
 
             # prepare output raster
             out, path_out = prepare_output(
@@ -451,6 +456,9 @@ def run_pipeline(config: Config, device: torch.device) -> None:
                 print(
                     f"""    [X] done writing metrics to {metrics_json.name} file.\n"""
                 )
+                processed_area += single_area
+
+    # ideally for metrics computing, the image should be deleted to avoid unnecessary disk usage
     else:
 
         # default configuration : exact clipping and default sized tiling
@@ -493,15 +501,16 @@ def run_pipeline(config: Config, device: torch.device) -> None:
                     )
 
         out.close()
+        dataset.close_raster()
         print(
             f"""    
                         
             [X] done writing to {path_out.split('/')[-1]} raster file.\n"""
         )
 
-    dataset.close_raster()  # type: ignore
-
     sys.stdout = sys.__stdout__
+
+    config.update({"processed_area": processed_area})
 
 
 def batch_metrics_pipeline(
@@ -518,6 +527,8 @@ def batch_metrics_pipeline(
     data_type = config["data_type"]  # IRC, RVB etc.
     file_pattern = f"*{data_type}.tif"
     compute_metrics = config["metrics"]
+
+    n_patches = 0
 
     # output file
     if compute_metrics:
@@ -554,6 +565,9 @@ def batch_metrics_pipeline(
         # Inference and saving the predictions
         run_pipeline(config, device)
 
+        n_patches += config["nb_patches"]
+    print(f"Total processed area: {config['processed_area']} m²")
+
     # we have all the predictions in the output folder
 
     if compute_metrics:
@@ -572,9 +586,6 @@ def batch_metrics_pipeline(
 
 # __________Main function___________#
 def main():
-
-    tracker = OfflineEmissionsTracker(country_iso_code="FRA", measure_power_secs=1e9)
-    tracker.start()
 
     # reading yaml
     args = argParser.parse_args()
@@ -602,10 +613,6 @@ def main():
         batch_metrics_pipeline(config, gt_dpt, device)
     else:
         run_pipeline(config, device)
-
-    emissions = tracker.stop()
-
-    print(f"Emissions: {emissions} g CO2")
 
 
 if __name__ == "__main__":
