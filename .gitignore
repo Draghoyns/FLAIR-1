@@ -140,3 +140,4 @@ credentials copy.json
 
 # Weights and Biases files
 wandb/
+emissions.csv
