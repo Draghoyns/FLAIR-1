@@ -32,8 +32,7 @@ def read_config(args) -> Config:
 
 
 def preprocess_config(config: Config) -> Config:
-    """Clean the config file by formatting correctly
-    and raising obvious errors before any run."""
+    """Clean the config file by formatting correctly and raising obvious errors before any run."""
 
     # paths
     # check existence
@@ -117,8 +116,7 @@ def check_list_type(lst: list[Any], expected_type: type) -> list[Any]:
 
 
 def gen_param_combination(config: Config) -> list[dict[str, Any]]:
-    """Generate all possible combinations of parameters.
-    Handles single case or iterative case."""
+    """Generate all possible combinations of parameters. Handles single case or iterative case."""
     combi = []
 
     # TODO : add differet padding strategies
@@ -293,7 +291,7 @@ def setup_indiv_path(config: Config, identifier: str) -> tuple[Config, str]:
 def open_images(
     config: Config, local_out: Path, get_truth: bool
 ) -> tuple[np.ndarray, Path]:
-    """Get the input image array and the ground truth if necessary."""
+    """Get the ground truth and output json path if necessary."""
 
     if get_truth:
         full_truth_path = Path(config["truth_path"])

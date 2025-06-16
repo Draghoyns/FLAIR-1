@@ -41,10 +41,11 @@ def valid_truth(config: Config) -> Path:
     the zone should be the same in both paths.
     """
     truth_path = Path(config["truth_path"])
+    input_path = Path(config["input_img_path"])
     # verify coherence with input path
-    sanity_check = str(config["input_img_path"]).split("/")[-3:-1]  # zone
-    truth_check = list(truth_path.parts[-3:-1])
-    if truth_check != sanity_check:
+    truth_zone = truth_path.parts[-3:-1]
+    input_zone = input_path.parts[-3:-1]
+    if truth_zone != input_zone:
         raise ValueError(
             f"Ground truth path {truth_path} does not match input path {config['input_img_path']}"
         )
@@ -97,38 +98,59 @@ def collect_paths_truth(config: Config, truth_dir: Path) -> pd.DataFrame:
 
 #### METRICS ####
 def overall_accuracy(npcm: np.ndarray) -> float:
-    oa = np.trace(npcm) / npcm.sum()
-    return 100 * oa
+    total = npcm.sum()
+    if total == 0:
+        return 0.0
+
+    return 100 * np.trace(npcm) / total
 
 
 def class_IoU(npcm: np.ndarray) -> tuple[np.ndarray, float]:
-    ious = (
-        100
-        * np.diag(npcm)
-        / (np.sum(npcm, axis=1) + np.sum(npcm, axis=0) - np.diag(npcm))
-    )
-    ious[np.isnan(ious)] = 0
-    return ious, np.mean(ious)
+    tp = np.diag(npcm)
+    fn = np.sum(npcm, axis=1) - tp
+    fp = np.sum(npcm, axis=0) - tp
+    denom = tp + fn + fp
+
+    ious = 100 * tp / denom
+    ious = np.nan_to_num(ious)
+
+    return ious, ious.mean()
 
 
 def class_precision(npcm: np.ndarray) -> tuple[np.ndarray, float]:
-    precision = 100 * np.diag(npcm) / np.sum(npcm, axis=0)
-    precision[np.isnan(precision)] = 0
-    return precision, np.mean(precision)
+    tp = np.diag(npcm)
+    fp = np.sum(npcm, axis=0) - tp
+    fn = np.sum(npcm, axis=1) - tp
+
+    precision = tp / (tp + fp)
+    precision = np.nan_to_num(precision)  # replaces NaN with 0
+
+    return precision, precision.mean()
 
 
 def class_recall(npcm: np.ndarray) -> tuple[np.ndarray, float]:
-    recall = 100 * np.diag(npcm) / np.sum(npcm, axis=1)
-    recall[np.isnan(recall)] = 0
-    return recall, np.mean(recall)
+    tp = np.diag(npcm)
+    fp = np.sum(npcm, axis=0) - tp
+    fn = np.sum(npcm, axis=1) - tp
+
+    recall = tp / (tp + fn)
+    recall = np.nan_to_num(recall)  # replaces NaN with 0
+
+    return recall, recall.mean()
 
 
 def class_fscore(npcm: np.ndarray):
-    precision = class_precision(npcm)[0]
-    recall = class_recall(npcm)[0]
-    fscore = 2 * (precision * recall) / (precision + recall)
-    fscore[np.isnan(fscore)] = 0
-    return fscore, np.mean(fscore)
+    tp = np.diag(npcm)
+    fp = np.sum(npcm, axis=0) - tp
+    fn = np.sum(npcm, axis=1) - tp
+
+    precision = tp / (tp + fp)
+    recall = tp / (tp + fn)
+
+    fscore = 2 * precision * recall / (precision + recall) * 100
+    fscore = np.nan_to_num(fscore)  # replaces NaN with 0
+
+    return fscore, fscore.mean()
 
 
 #### COMPUTATION ####
@@ -254,6 +276,7 @@ def batch_metrics(config: Config, truth_dir: Path) -> list[dict[str, Any]]:
 
             # get timings
             method_times = config.get("times", {}).get(method, [])
+
             # dict of str : list of float
             avg_data_prep = (
                 np.mean(method_times["data_prep_time"])
@@ -580,7 +603,7 @@ if __name__ == "__main__":
 
     # error_rate_loop(Path(truth_dir), Path(out_dir), Path(pred_dir))
 
-    metrics_path = "/media/DATA/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out20250612/small_pytorch_gpu_512_1024/metrics.json"
+    metrics_path = "/media/DATA/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out20250613/small_pytorch_gpu_512/metrics.json"
 
     # analyze_metrics((Path(metrics_path)))
 

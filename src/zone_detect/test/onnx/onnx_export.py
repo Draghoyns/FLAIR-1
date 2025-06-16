@@ -47,7 +47,7 @@ def export_onnx(config: dict[str, Any], out_name: str = "opti"):
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     patch_size = config.get(
-        "patch_size", 512
+        "img_pixels_detection", 512
     )  # do we really need to ? can't it be dynamic ?
     n_bands = len(config["channels"])
     batch_size = config.get("batch_size", 1)
