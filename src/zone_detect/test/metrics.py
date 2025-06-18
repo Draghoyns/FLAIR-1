@@ -231,7 +231,7 @@ def batch_metrics(config: Config, truth_dir: Path) -> list[dict[str, Any]]:
         config (dict): Configuration, in which the parameters for the inference are specified
         truth_dir (Path): Path to the ground truth directory.
     Returns:
-        metrics_file (list): List of dictionaries containing the metrics for each method. Temporal metrics correspond to the processing time of one patch for that method, to keep things fair despite of different image sizes.
+        metrics_file (list): List of dictionaries containing the metrics for each method. Temporal metrics correspond to the estimated processing time of one full image for that method, computed with an average weighted by number of patches per image.
     """
 
     metrics_file = []
@@ -259,7 +259,8 @@ def batch_metrics(config: Config, truth_dir: Path) -> list[dict[str, Any]]:
 
         sum_confmat = np.zeros((n_classes, n_classes))
         method_patches = np.array(config.get("nb_patches", {}).get(method, []))
-        total_patches = np.sum(method_patches)
+        total_patches = int(np.sum(method_patches))
+        mean_patches = np.mean(method_patches) if method_patches.size > 0 else 0
 
         for pred_path, truth_path in zip(pred_paths, gt_paths):
             try:
@@ -294,26 +295,21 @@ def batch_metrics(config: Config, truth_dir: Path) -> list[dict[str, Any]]:
             method_times = config.get("times", {}).get(method, [])
 
             # dict of str : list of float
-            avg_data_prep = (
-                np.average(method_times["data_prep_time"], weights=method_patches)
-                if "data_prep_time" in method_times
-                else 0
-            )
-            avg_inference = (
-                np.average(method_times["pure_infer_time"], weights=method_patches)
-                if "pure_infer_time" in method_times
-                else 0
-            )
-            avg_write = (
-                np.average(method_times["data_write_time"], weights=method_patches)
-                if "data_write_time" in method_times
-                else 0
-            )
-            avg_time = (
-                np.average(method_times["total_time"], weights=method_patches)
-                if "total_time" in method_times
-                else 0
-            )
+            norm_data_prep = np.array(method_times["data_prep_time"]) / method_patches
+
+            avg_data_prep = np.mean(norm_data_prep) * mean_patches
+
+            norm_inference = np.array(method_times["pure_infer_time"]) / method_patches
+
+            avg_inference = np.mean(norm_inference) * mean_patches
+
+            norm_write = np.array(method_times["data_write_time"]) / method_patches
+
+            avg_write = np.mean(norm_write) * mean_patches
+
+            norm_time = np.array(method_times["total_time"]) / method_patches
+
+            avg_time = np.mean(norm_time) * mean_patches
 
         metrics = {
             "Method parameters": [
@@ -503,7 +499,7 @@ def error_rate_patch(
         plt.figure(figsize=(10, 10))
         plt.axis("off")
         plt.imshow(
-            out_array, cmap="plasma", interpolation="nearest", vmin=vmin, vmax=vmax
+            out_array, cmap="plasma", interpolation="nearest", vmin=vmin, vmax=vmax  # type: ignore
         )
         plt.colorbar()
         plt.title("Error Rate for method : \n" + full_method)
@@ -612,7 +608,7 @@ if __name__ == "__main__":
 
     # error_rate_loop(Path(truth_dir), Path(out_dir), Path(pred_dir))
 
-    metrics_path = "/media/DATA/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out20250616/small_onnx_cpu/metrics.json"
+    metrics_path = "/media/DATA/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out20250618/small_pytorch_gpu/metrics.json"
 
     # analyze_metrics((Path(metrics_path)))
 
