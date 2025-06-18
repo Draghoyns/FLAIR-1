@@ -2,13 +2,12 @@ import argparse
 import datetime
 import json
 import sys
+from pruna import SmashConfig, smash
 from tqdm import tqdm
 import warnings
 
 from pathlib import Path
 from typing import Any
-
-from codecarbon import OfflineEmissionsTracker
 
 from geopandas import GeoDataFrame
 
@@ -230,6 +229,15 @@ def prepare_model(config: Config, device: torch.device) -> tuple[str, dict[str, 
 
         ## loading model and weights
         model = load_model(config)
+
+        pruna = True
+        if pruna:
+            # config for example
+            smash_config = SmashConfig()
+            smash_config["pruner"] = "torch_unstructured"
+            smash_config["quantizer"] = "half"
+            model = smash(model=model, smash_config=smash_config)
+
         model.eval()
         model = model.to(device)
         print(f"""    [x] loaded model and weights...""")
