@@ -90,11 +90,15 @@ def get_onnx_path(config: dict[str, Any]) -> Path:
     model_name = config["model_framework"]["HuggingFace"]["org_model"]
     model_names = model_name.split("/")  # Get the last part of the model name
     # e.g. "openmmlab/upernet-swin-small" -> "upernet-swin-small"
-    onnx_path = (
-        Path(config["model_weights"]).parent
-        / model_names[0]
-        / f"simplified_{model_names[-1]}_opti.onnx"
-    )
+
+    device = "gpu" if config.get("use_gpu", False) else "cpu"
+    batch_size = config.get("batch_size", 1)
+    channels = len(config.get("channels", [1, 2, 3]))
+    patch_size = config.get("img_pixels_detection", 512)
+
+    id = f"{model_names[-1]}_{device}_{batch_size}x{channels}x{patch_size}x{patch_size}"
+
+    onnx_path = Path(config["model_weights"]).parent / model_names[0] / f"{id}.onnx"
 
     if not onnx_path.exists():
         print(f"ONNX model not found at {onnx_path}. Exporting...")
