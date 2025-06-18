@@ -86,7 +86,7 @@ if __name__ == "__main__":
     else:
 
         scaled_area = area / 1e10  # scale area to 100km²
-        scaled_emissions = emissions / scaled_area
+        scaled_emissions = emissions / scaled_area * 1000  # scale to grams
 
         print(f"Raw emissions: {emissions} g CO2")
         print(f"Area: {scaled_area} 100km²")
