@@ -296,19 +296,15 @@ def batch_metrics(config: Config, truth_dir: Path) -> list[dict[str, Any]]:
 
             # dict of str : list of float
             norm_data_prep = np.array(method_times["data_prep_time"]) / method_patches
-
             avg_data_prep = np.mean(norm_data_prep) * mean_patches
 
             norm_inference = np.array(method_times["pure_infer_time"]) / method_patches
-
             avg_inference = np.mean(norm_inference) * mean_patches
 
             norm_write = np.array(method_times["data_write_time"]) / method_patches
-
             avg_write = np.mean(norm_write) * mean_patches
 
             norm_time = np.array(method_times["total_time"]) / method_patches
-
             avg_time = np.mean(norm_time) * mean_patches
 
         metrics = {
@@ -608,7 +604,7 @@ if __name__ == "__main__":
 
     # error_rate_loop(Path(truth_dir), Path(out_dir), Path(pred_dir))
 
-    metrics_path = "/media/DATA/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out20250618/small_pytorch_gpu/metrics.json"
+    metrics_path = "/media/DATA/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out20250623/small_onnx_gpu_morning-batch:)/metrics.json"
 
     # analyze_metrics((Path(metrics_path)))
 
