@@ -17,16 +17,16 @@ Config = dict[str, Any]  # type alias for configuration dictionary
 
 
 #### CONFIG ####
-def read_config(args) -> Config:
-    file_path = args.conf
+def read_config(arguments: dict) -> Config:
+    file_path = arguments.get("conf", "config.yaml")
     with open(file_path, "r") as f:
         config = yaml.safe_load(f)
 
     # put arguments in config
-    config["metrics"] = args.metrics
-    config["batch_mode"] = args.batch_mode
-    config["compare"] = args.compare
-    config["onnx"] = args.onnx
+    config["metrics"] = arguments.get("metrics", True)
+    config["batch_mode"] = arguments.get("batch_mode", False)
+    config["compare"] = arguments.get("compare", False)
+    config["onnx"] = arguments.get("onnx", False)
 
     return preprocess_config(config)
 
@@ -115,11 +115,23 @@ def check_list_type(lst: list[Any], expected_type: type) -> list[Any]:
     return res
 
 
-def gen_param_combination(config: Config) -> list[dict[str, Any]]:
+def gen_param_combination(config: Config, compare: bool) -> list[dict[str, Any]]:
     """Generate all possible combinations of parameters. Handles single case or iterative case."""
     combi = []
 
-    # TODO : add differet padding strategies
+    if not compare:
+        # single case, no need to iterate
+        param = {
+            "img_pixels_detection": config["img_pixels_detection"],
+            "margin": config["margin"],
+            "padding": "no-padding",
+            "stitching": "exact-clipping",
+            "stride": get_stride(config)[0],
+        }
+        combi.append(param)
+        return combi
+
+    # TODO : add different padding strategies
     padding_list = config.get("strategies", {}).get("padding_overall", [])
     if not padding_list:
         padding_list = ["no-padding"]
@@ -254,9 +266,10 @@ def setup_device(config: Config) -> tuple[torch.device, bool]:
     return device, use_gpu
 
 
-def setup(args) -> tuple[Config, torch.device, bool]:
+def setup(arguments: dict) -> tuple[Config, torch.device, bool]:
     """Setup the device"""
-    config = read_config(args)
+
+    config = read_config(arguments)
     device, use_gpu = setup_device(config)
 
     return config, device, use_gpu
