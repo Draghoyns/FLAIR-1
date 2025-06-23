@@ -2,7 +2,6 @@ import argparse
 import datetime
 import json
 import sys
-from pruna import SmashConfig, smash
 from tqdm import tqdm
 import warnings
 
@@ -22,7 +21,7 @@ from torch.utils.data import DataLoader
 
 from src.zone_detect.dataset import Sliced_Dataset
 from src.zone_detect.inference import inference
-from src.zone_detect.model import load_model
+from src.zone_detect.model import load_model, opti_pruna
 from src.zone_detect.slicing_job import slice_extent, slice_extent_separate
 from src.zone_detect.stitching_job import stitching
 
@@ -190,6 +189,7 @@ def prepare_data(
 
 
 def prepare_model(config: Config, device: torch.device) -> tuple[str, dict[str, Any]]:
+    # load one model, once only
     print(
         f"""
     ##############################################
@@ -230,13 +230,9 @@ def prepare_model(config: Config, device: torch.device) -> tuple[str, dict[str, 
         ## loading model and weights
         model = load_model(config)
 
-        pruna = True
+        pruna = config.get("pruna", False)
         if pruna:
-            # config for example
-            smash_config = SmashConfig()
-            smash_config["pruner"] = "torch_unstructured"
-            smash_config["quantizer"] = "half"
-            model = smash(model=model, smash_config=smash_config)
+            model = opti_pruna(model)
 
         model.eval()
         model = model.to(device)
@@ -302,6 +298,8 @@ def run_pipeline(config: Config, device: torch.device) -> None:
     compare = config["compare"]
     local_out = Path(config["local_out"])
     compute_metrics = config["metrics"]
+    model_type = config.get("model_type", "pytorch")
+    model_args = config.get("model_args", dict())
 
     processed_area = config.get("processed_area", 0.0)
 
@@ -312,9 +310,6 @@ def run_pipeline(config: Config, device: torch.device) -> None:
     sys.stdout = Logger(filename=str(log_filename))
     sys.stderr = sys.stdout
     print(f"    [LOGGER] Writing logs to: {log_filename}")
-
-    # model
-    model_type, model_args = prepare_model(config, device)
 
     # setup elements for the metrics
     truth_array, metrics_json = open_images(
@@ -544,8 +539,6 @@ def batch_metrics_pipeline(
     file_pattern = f"*{data_type}.tif"
     compute_metrics = config["metrics"]
 
-    n_patches = 0
-
     # output file
     if compute_metrics:
         assert out_json, "Please provide an output path for the metrics"
@@ -586,14 +579,13 @@ def batch_metrics_pipeline(
     if compute_metrics:
 
         out = Path(out_json).with_suffix(".json")
-
         metrics_file = batch_metrics(config, truth_dpt)
 
         # save the metrics to a json file
-        json.dump(
-            metrics_file,
-            open(out, "w"),
-        )
+
+        with open(out, "w") as f:
+            json.dump(metrics_file, f, indent=2)
+
         print(f"Metrics saved to {out}")
 
 
@@ -605,6 +597,11 @@ def main():
 
     # setting up device and log
     config, device, use_gpu = setup(args)
+
+    # model
+    model_type, model_args = prepare_model(config, device)
+    config["model_type"] = model_type
+    config["model_args"] = model_args
 
     if args.batch_mode:
         gt_dir = Path(config["truth_root"])

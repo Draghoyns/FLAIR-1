@@ -7,6 +7,8 @@ from typing import Mapping
 import torch
 import torch.nn as nn
 
+from pruna import SmashConfig, smash
+
 import segmentation_models_pytorch as smp
 from transformers import AutoModelForSemanticSegmentation, AutoConfig
 
@@ -86,5 +88,21 @@ def load_model(config: dict) -> nn.Module:
 
     state_dict = get_module(checkpoint=checkpoint)
     model.load_state_dict(state_dict=state_dict, strict=True)
+
+    return model
+
+
+def opti_pruna(model: nn.Module) -> nn.Module:
+    """
+    Apply pruna algorithms.
+    """
+    # config for example
+    smash_config = SmashConfig()
+
+    # smash_config["pruner"] = "torch_unstructured"
+    smash_config["quantizer"] = "half"
+    # smash_config["compiler"] = "torch_compile"
+
+    model = smash(model=model, smash_config=smash_config)
 
     return model
