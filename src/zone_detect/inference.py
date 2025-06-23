@@ -59,11 +59,62 @@ def inference_onnx(
 
     imgs = samples["image"]
 
-    # onnx_inputs = [np.expand_dims(tensor.numpy(), axis=0) for tensor in imgs]
     onnx_inputs = imgs.numpy()
 
-    onnxruntime_input = {ort_session.get_inputs()[0].name: onnx_inputs}
+    input_name = ort_session.get_inputs()[0].name
 
+    onnxruntime_input = {input_name: onnx_inputs}
+
+    ########## Trying io binding
+    """
+    input_name = ort_session.get_inputs()[0].name
+    output_name = ort_session.get_outputs()[0].name
+    output_shape = ort_session.get_outputs()[0].shape
+    batch_size, channels, height, width = imgs.shape
+
+    # Handle dynamic output shape if necessary
+    if output_shape is None or any(dim is None for dim in output_shape):
+        output_shape = (
+            batch_size,
+            ort_session.get_outputs()[0].type.shape[1],
+            height,
+            width,
+        )
+
+    input_ortvalue = ort.OrtValue.ortvalue_from_numpy(onnx_inputs, "cuda", 0)
+    output_ortvalue = ort.OrtValue.ortvalue_from_shape_and_type(
+        output_shape,
+        np.float32,
+        "cuda",
+        0,
+    )
+
+    ort_session_io = ort_session.io_binding()
+
+    ort_session_io.bind_input(
+        name=input_name,
+        device_type=input_ortvalue.device_name(),
+        device_id=0,
+        element_type=np.float32,
+        shape=input_ortvalue.shape(),
+        buffer_ptr=input_ortvalue.data_ptr(),
+    )
+
+    ort_session_io.bind_output(
+        name=output_name,
+        device_type=output_ortvalue.device_name(),
+        device_id=0,
+        element_type=np.float32,
+        shape=output_ortvalue.shape(),
+        buffer_ptr=output_ortvalue.data_ptr(),
+    )
+
+    ort_session.run_with_iobinding(ort_session_io)
+    logits = ort_session_io.copy_outputs_to_cpu()[0]
+    """
+    ##########
+
+    # sane, default way
     logits = ort_session.run(None, onnxruntime_input)[0]
     predictions = softmax(logits, axis=1)
 
