@@ -1,3 +1,4 @@
+import math
 import geopandas as gpd
 import numpy as np
 
@@ -16,6 +17,30 @@ from src.zone_detect.test.tiles import (
     total_weights,
     out_of_bounds,
 )
+
+
+def round_shape(window, op="ceil", pixel_precision=4) -> Window:
+    """Rounds the width and height of a rasterio window manually."""
+    if op not in {"ceil", "floor", "round"}:
+        raise ValueError(f"Unsupported op: {op}")
+
+    round_func = {"ceil": math.ceil, "floor": math.floor, "round": round}[op]
+
+    # Get width and height
+    width = window.width
+    height = window.height
+
+    # Apply rounding
+    factor = 10**pixel_precision
+    rounded_width = round_func(width * factor) / factor
+    rounded_height = round_func(height * factor) / factor
+
+    # Window is a frozen dataclass, so create a new instance with the desired values using from_slices
+    row_slice = slice(int(window.row_off), int(window.row_off + rounded_height))
+    col_slice = slice(int(window.col_off), int(window.col_off + rounded_width))
+    return Window.from_slices(
+        row_slice, col_slice, height=rounded_height, width=rounded_width
+    )
 
 
 def stitching(
@@ -57,7 +82,7 @@ def stitching(
         # get the window
         sliced_patch_bounds = create_polygon_from_bounds(*sliced_box)
         window = geometry_window(out, [sliced_patch_bounds], pixel_precision=6)
-        window = window.round_shape(op="ceil", pixel_precision=4)
+        window = round_shape(window, op="ceil", pixel_precision=4)
         return prediction, window
 
     else:
