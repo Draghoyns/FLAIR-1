@@ -154,16 +154,19 @@ def prepare_tiles(
         stride=stride,
     )
     ## log
-    conf_log(config, resolution, img_size)
+    log_verbose = config.get("log_verbose", True)
+    if log_verbose:
+        conf_log(config, resolution, img_size)
     print(f"""    [x] sliced input raster to {len(sliced_dataframe)} squares...""")
 
     return sliced_dataframe, profile, resolution
 
 
 def prepare_data(
-    config: Config, stride: int
+    config: Config,
 ) -> tuple[Sliced_Dataset, DataLoader, GeoDataFrame, dict]:
 
+    stride = config["stride"]
     # slicing
     sliced_dataframe, profile, resolution = prepare_tiles(config, stride)
 
@@ -188,7 +191,7 @@ def prepare_data(
     return dataset, data_loader, sliced_dataframe, profile
 
 
-def prepare_model(config: Config, device: torch.device) -> tuple[str, dict[str, Any]]:
+def prepare_model(config: Config, device: torch.device) -> Config:
     # load one model, once only
     print(
         f"""
@@ -242,7 +245,9 @@ def prepare_model(config: Config, device: torch.device) -> tuple[str, dict[str, 
             {"model": model, "device": device, "use_gpu": config["use_gpu"]}
         )
 
-    return model_type, arg_package
+    config.update({"model_type": model_type, "model_args": arg_package})
+
+    return config
 
 
 def prepare_output(
@@ -270,7 +275,6 @@ def prepare_output(
     out_profile["count"] = (
         2 if config["output_type"] == "argmax" else config["n_classes"]
     )
-
     # second band gives the max probability
 
     out = rasterio.open(path_out, "w+", **out_profile)
@@ -281,12 +285,13 @@ def prepare_output(
 def run_from_config(config: Config) -> None:
     """Run the pipeline from a config file"""
     # setting up device and log
+    # TODO: add setup operations to the config
     device, _ = setup_device(config)
 
-    run_pipeline(config, device)
+    run_pipeline(config)
 
 
-def run_pipeline(config: Config, device: torch.device) -> None:
+def run_pipeline(config: Config) -> None:
     """Works for a single input image"""
 
     # set up common output path
@@ -349,7 +354,7 @@ def run_pipeline(config: Config, device: torch.device) -> None:
         # start timer
         timer_data = datetime.datetime.now()
 
-        dataset, data_loader, sliced_dataframe, profile = prepare_data(config, stride)
+        dataset, data_loader, sliced_dataframe, profile = prepare_data(config)
         data_prep_time = (
             datetime.datetime.now() - timer_data
         ).total_seconds() * 1000  # ms
@@ -560,7 +565,7 @@ def batch_metrics_pipeline(
         )
 
         # Inference and saving the predictions
-        run_pipeline(config, device)
+        run_pipeline(config)
 
     # we have all the predictions in the output folder
 
@@ -587,9 +592,7 @@ def main():
     config, device, use_gpu = setup(args)
 
     # model
-    model_type, model_args = prepare_model(config, device)
-    config["model_type"] = model_type
-    config["model_args"] = model_args
+    config = prepare_model(config, device)
 
     if args["batch_mode"]:
         gt_dir = Path(config["truth_root"])
@@ -610,7 +613,7 @@ def main():
 
         batch_metrics_pipeline(config, gt_dpt, device)
     else:
-        run_pipeline(config, device)
+        run_pipeline(config)
 
 
 if __name__ == "__main__":

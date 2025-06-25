@@ -225,6 +225,128 @@ def compute_metrics_patch(
     return metrics
 
 
+def add_confusion(
+    pred_path: Path,
+    truth_path: Path,
+    sum_confmat: np.ndarray,
+    n_classes: int,
+    stride: int,
+) -> np.ndarray:
+    try:
+        # loading
+        with rasterio.open(pred_path) as src:
+            preds = src.read(1)
+        with rasterio.open(truth_path) as src:
+            target = src.read(1) - 1
+
+        # weighted confusion matrix
+        input_img_size = target.shape  # (height, width)
+        num_patches = nb_patches(input_img_size, stride)
+
+        sum_confmat += num_patches * confusion_matrix(
+            target.flatten(), preds.flatten(), labels=range(n_classes)
+        )
+    except Exception as e:
+        print(f"Error processing {pred_path} and {truth_path}: {e}")
+    return sum_confmat
+
+
+def process_metrics(
+    confmat: np.ndarray,
+    config: Config,
+    info: Config,
+    method_times: dict,
+    method_patches: list[int],
+    area: float = 0.0,
+    carbon: float = 0.0,
+) -> dict[str, Any]:
+
+    patch_size = info["patch_size"]
+    stride = info["stride"]
+    margin = info["margin"]
+    padding = info["padding"]
+    stitching = info["stitching"]
+
+    classes = config["classes"]
+    n_classes = len(classes)
+
+    total_patches = int(np.sum(method_patches))
+    mean_patches = np.mean(method_patches) if len(method_patches) > 0 else 0
+
+    # compute metrics for the group
+    norm_confmat = confmat / total_patches if total_patches > 0 else confmat
+    confmat_cleaned = clean_confmat(norm_confmat, config)
+
+    # metrics
+    with np.errstate(divide="ignore", invalid="ignore"):
+        # nans are handled dont worry
+        per_c_ious, avg_ious = class_IoU(confmat_cleaned)
+        ovr_acc = overall_accuracy(confmat_cleaned)
+        per_c_fscore, avg_fscore = class_fscore(confmat_cleaned)
+
+        # get timings
+
+        # dict of str : list of float
+        norm_data_prep = np.array(method_times["data_prep_time"]) / method_patches
+        avg_data_prep = np.mean(norm_data_prep) * mean_patches
+
+        norm_inference = np.array(method_times["pure_infer_time"]) / method_patches
+        avg_inference = np.mean(norm_inference) * mean_patches
+
+        norm_write = np.array(method_times["data_write_time"]) / method_patches
+        avg_write = np.mean(norm_write) * mean_patches
+
+        norm_time = np.array(method_times["total_time"]) / method_patches
+        avg_time = np.mean(norm_time) * mean_patches
+
+    metrics = {
+        "Method parameters": [
+            "model name",
+            "patch size",
+            "stride",
+            "margin",
+            "padding",
+            "stitching method",
+        ],
+        "Parameters values": [
+            config["model_name"],
+            patch_size,
+            stride,
+            margin,
+            padding,
+            stitching,
+        ],
+        "Avg_metrics_name": [
+            "mIoU",
+            "Overall Accuracy",
+            "Fscore",
+            "Data preparation time in ms",
+            "Inference time in ms",
+            "Data writing time in ms",
+            "Total time in ms",
+            "Total patches processed",
+            "Total area processed in m2",
+            "Total carbon emissions in kg",
+        ],
+        "Avg_metrics": [
+            avg_ious,
+            ovr_acc,
+            avg_fscore,
+            avg_data_prep,
+            avg_inference,
+            avg_write,
+            avg_time,
+            total_patches,
+            area,
+            carbon,
+        ],
+        "classes": [classes[i][1] for i in range(1, n_classes + 1)],
+        "per_class_iou": list(per_c_ious),
+        "per_class_fscore": list(per_c_fscore),
+    }
+    return metrics
+
+
 def batch_metrics(config: Config, truth_dir: Path) -> list[dict[str, Any]]:
     """Compute metrics for each method in the batch mode. The metrics are computed for the whole image, not per patch. Computation is based on the image files.
     Args:
@@ -236,8 +358,7 @@ def batch_metrics(config: Config, truth_dir: Path) -> list[dict[str, Any]]:
 
     metrics_file = []
     df = collect_paths_truth(config, truth_dir)
-    classes = config["classes"]
-    n_classes = len(classes)
+    n_classes = len(config["classes"])
 
     grouped = df.groupby("method")
 
@@ -248,106 +369,28 @@ def batch_metrics(config: Config, truth_dir: Path) -> list[dict[str, Any]]:
         # method parameters
         info = extract_method(str(method))
 
-        patch_size = info["patch_size"]
-        stride = info["stride"]
-        margin = info["margin"]
-        padding = info["padding"]
-        stitching = info["stitching"]
-
         pred_paths = group["pred_path"].tolist()
         gt_paths = group["truth_path"].tolist()
 
         sum_confmat = np.zeros((n_classes, n_classes))
-        method_patches = np.array(config.get("nb_patches", {}).get(method, []))
-        total_patches = int(np.sum(method_patches))
-        mean_patches = np.mean(method_patches) if method_patches.size > 0 else 0
 
         for pred_path, truth_path in zip(pred_paths, gt_paths):
-            try:
-                # loading
-                with rasterio.open(pred_path) as src:
-                    preds = src.read(1)
-                with rasterio.open(truth_path) as src:
-                    target = src.read(1) - 1
 
-                # weighted confusion matrix
-                input_img_size = target.shape  # (height, width)
-                num_patches = nb_patches(input_img_size, stride)
+            sum_confmat = add_confusion(
+                Path(pred_path),
+                Path(truth_path),
+                sum_confmat,
+                n_classes,
+                info["stride"],
+            )
 
-                sum_confmat += num_patches * confusion_matrix(
-                    target.flatten(), preds.flatten(), labels=range(n_classes)
-                )
-            except Exception as e:
-                print(f"Error processing {pred_path} and {truth_path}: {e}")
+        method_times = config.get("times", {}).get(method, [])
+        method_patches = config.get("nb_patches", {}).get(method, [])
 
-        # compute metrics for the group
-        norm_confmat = sum_confmat / total_patches if total_patches > 0 else sum_confmat
-        confmat_cleaned = clean_confmat(norm_confmat, config)
+        metrics = process_metrics(
+            sum_confmat, config, info, method_times, method_patches
+        )
 
-        # metrics
-        with np.errstate(divide="ignore", invalid="ignore"):
-            # nans are handled dont worry
-            per_c_ious, avg_ious = class_IoU(confmat_cleaned)
-            ovr_acc = overall_accuracy(confmat_cleaned)
-            per_c_fscore, avg_fscore = class_fscore(confmat_cleaned)
-
-            # get timings
-            method_times = config.get("times", {}).get(method, [])
-
-            # dict of str : list of float
-            norm_data_prep = np.array(method_times["data_prep_time"]) / method_patches
-            avg_data_prep = np.mean(norm_data_prep) * mean_patches
-
-            norm_inference = np.array(method_times["pure_infer_time"]) / method_patches
-            avg_inference = np.mean(norm_inference) * mean_patches
-
-            norm_write = np.array(method_times["data_write_time"]) / method_patches
-            avg_write = np.mean(norm_write) * mean_patches
-
-            norm_time = np.array(method_times["total_time"]) / method_patches
-            avg_time = np.mean(norm_time) * mean_patches
-
-        metrics = {
-            "Method parameters": [
-                "model name",
-                "patch size",
-                "stride",
-                "margin",
-                "padding",
-                "stitching method",
-            ],
-            "Parameters values": [
-                config["model_name"],
-                patch_size,
-                stride,
-                margin,
-                padding,
-                stitching,
-            ],
-            "Avg_metrics_name": [
-                "mIoU",
-                "Overall Accuracy",
-                "Fscore",
-                "Data preparation time in ms",
-                "Inference time in ms",
-                "Data writing time in ms",
-                "Total time in ms",
-                "Total patches processed",
-            ],
-            "Avg_metrics": [
-                avg_ious,
-                ovr_acc,
-                avg_fscore,
-                avg_data_prep,
-                avg_inference,
-                avg_write,
-                avg_time,
-                total_patches,
-            ],
-            "classes": [classes[i][1] for i in range(1, n_classes + 1)],
-            "per_class_iou": list(per_c_ious),
-            "per_class_fscore": list(per_c_fscore),
-        }
         metrics_file.append(metrics)
 
     return metrics_file

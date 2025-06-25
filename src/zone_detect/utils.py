@@ -37,14 +37,18 @@ def preprocess_config(config: Config) -> Config:
     # paths
     # check existence
     Path(config["output_path"]).mkdir(parents=True, exist_ok=True)
-    assert os.path.exists(config["input_img_path"]), "Input image path does not exist."
-    config["input_img_path"] = Path(config["input_img_path"]).with_suffix(".tif")
+
+    input_path = config.get("input_img_path", "")
+    if input_path != "":
+        assert os.path.exists(input_path), "Input image path does not exist."
+        config["input_img_path"] = Path(input_path).with_suffix(".tif")
 
     if config["metrics"]:
         config["metrics_out"] = config["output_path"] + "/metrics.json"
-        assert os.path.exists(config["truth_path"]), "Ground truth path does not exist."
-
-        config["truth_path"] = Path(config["truth_path"]).with_suffix(".tif")
+        truth_path = config.get("truth_path", "")
+        if truth_path != "":
+            assert os.path.exists(truth_path), "Ground truth path does not exist."
+            config["truth_path"] = Path(truth_path).with_suffix(".tif")
 
     # channels
     assert isinstance(config["channels"], list) and all(
@@ -70,12 +74,14 @@ def preprocess_config(config: Config) -> Config:
     ], "Invalid normalization type: should be custom or scaling."
 
     # model
-    assert os.path.isfile(config["model_weights"]), "Model weights file does not exist."
-    if os.path.splitext(config["model_weights"])[1] not in [".pth", ".ckpt"]:
-        raise ValueError(
-            "Model weights should be a .pth or .ckpt file. "
-            f"Got {os.path.splitext(config['model_weights'])[1]}"
-        )
+    weights_path = config.get("model_weights", "")
+    if weights_path != "":
+        assert os.path.isfile(weights_path), "Model weights file does not exist."
+        if os.path.splitext(weights_path)[1] not in [".pth", ".ckpt"]:
+            raise ValueError(
+                "Model weights should be a .pth or .ckpt file. "
+                f"Got {os.path.splitext(weights_path)[1]}"
+            )
 
     if config["compare"]:
 
@@ -245,7 +251,7 @@ def setup_out_path(config: Config) -> Config:
     output.mkdir(parents=True, exist_ok=True)
     child_dir = output
 
-    if config["compare"]:
+    if config.get("compare", False):
         # create a directory with a unique id
         current_time = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         child_dir = child_dir / Path(current_time)
