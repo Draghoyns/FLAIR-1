@@ -136,10 +136,13 @@ dmypy.json
 # vscode
 .vscode/
 
-credentials copy.json
-
 # Weights and Biases files
 wandb/
 
+# images
 *.png 
 *.csv
+
+# saved files while testing
+!testing_saves/
+credentials copy.json
