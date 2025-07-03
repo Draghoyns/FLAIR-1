@@ -60,9 +60,8 @@ def preprocess_config(config: Config) -> Config:
         type(config["img_pixels_detection"]) == int
     ), "img_pixels_detection should be an integer"
     assert (
-        type(config["margin"]) == int
-        and 2 * config["margin"] < config["img_pixels_detection"]
-    ), "Margin should be an integer and less than half of img_pixels_detection"
+        2 * config["margin"] < config["img_pixels_detection"]
+    ), "Margin should be less than half of img_pixels_detection"
     assert config["output_type"] in [
         "class_prob",
         "argmax",
@@ -97,12 +96,21 @@ def preprocess_config(config: Config) -> Config:
         config["strategies"]["stitching"]["methods"] = check_list_type(
             config["strategies"]["stitching"]["methods"], str
         )
-        config["strategies"]["stitching"]["margin"] = check_list_type(
-            config["strategies"]["stitching"]["margin"], float
-        )
-        assert all(
-            i >= 0 and i <= 1 for i in config["strategies"]["stitching"]["margin"]
-        ), "Margin should be a percentage"
+
+        # if margin is a percentage, convert to int (pixels)
+        # check if converted margin is valid
+        new_margins = []
+        for i in config["strategies"]["stitching"]["margin"]:
+            if isinstance(i, float) and i < 0.5 and i >= 0:
+                i = int(i * config["img_pixels_detection"])
+            elif isinstance(i, int):
+                i = int(i)
+            else:
+                raise ValueError(
+                    "Margin should be a percentage (e.g. 0.1) less than 0.5 or a pixel value (int)."
+                )
+            new_margins.append(i)
+        config["strategies"]["stitching"]["margin"] = new_margins
 
     return config
 
@@ -245,6 +253,26 @@ def info_extract(file: Path) -> dict[str, Any]:
 
 
 #### SETUP ####
+
+
+def setup_device(config: Config) -> tuple[torch.device, bool]:
+    """Setup the device"""
+
+    use_gpu = False if torch.cuda.is_available() is False else config["use_gpu"]
+    device = torch.device("cuda" if use_gpu else "cpu")
+
+    return device, use_gpu
+
+
+def setup(arguments: dict) -> tuple[Config, torch.device, bool]:
+    """Read the config file and setup the device"""
+
+    config = read_config(arguments)
+    device, use_gpu = setup_device(config)
+
+    return config, device, use_gpu
+
+
 def setup_out_path(config: Config) -> Config:
     """Setup the output directory"""
     output = Path(config["output_path"])
@@ -261,24 +289,6 @@ def setup_out_path(config: Config) -> Config:
     config["local_out"] = child_dir
 
     return config
-
-
-def setup_device(config: Config) -> tuple[torch.device, bool]:
-    """Setup the device"""
-
-    use_gpu = False if torch.cuda.is_available() is False else config["use_gpu"]
-    device = torch.device("cuda" if use_gpu else "cpu")
-
-    return device, use_gpu
-
-
-def setup(arguments: dict) -> tuple[Config, torch.device, bool]:
-    """Setup the device"""
-
-    config = read_config(arguments)
-    device, use_gpu = setup_device(config)
-
-    return config, device, use_gpu
 
 
 def setup_indiv_path(config: Config, identifier: str) -> tuple[Config, str]:
@@ -307,6 +317,36 @@ def setup_indiv_path(config: Config, identifier: str) -> tuple[Config, str]:
         raise error  # avoid silent failure
 
 
+def batchmode_path_setup(
+    config: Config,
+    args: dict,
+    use_gpu: bool,
+) -> tuple[Config, Path]:
+
+    # assumes the path is strctured as:
+    # /path/to/zone_detect/data/truth_root/department/zone/truth_path
+
+    gt_dir = Path(config["truth_root"])
+    gt_dpt = gt_dir / Path(config["truth_path"]).parts[-3]
+
+    model_nickname = config["model_name"].split("-")[-1]
+    model_type = "onnx" if args["onnx"] else "pytorch"
+    device_type = "gpu" if use_gpu else "cpu"
+
+    new_folder = f"{model_nickname}_{model_type}_{device_type}"
+
+    config.update(
+        {
+            "output_path": f"{config['output_path']}/{new_folder}",
+            "metrics_out": f"{config['output_path']}/{new_folder}/metrics.json",
+        }
+    )
+    return config, gt_dpt
+
+
+#### IMAGES ####
+
+
 def open_images(
     config: Config, local_out: Path, get_truth: bool
 ) -> tuple[np.ndarray, Path]:
@@ -327,7 +367,6 @@ def open_images(
     return truth_array, metrics_json
 
 
-#### ROUNDING AND ALIGNING ####
 def truncate(value: float, decimals: int) -> float:
     """Truncate a float to a given number of decimal places"""
     factor = 10**decimals
