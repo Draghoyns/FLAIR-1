@@ -1,5 +1,8 @@
 import datetime
+import gc
 import json
+import os
+import psutil
 from tqdm import tqdm
 import wandb
 
@@ -15,6 +18,7 @@ from rasterio.windows import Window
 
 from sklearn.metrics import confusion_matrix
 
+from src.zone_detect.model import load_model
 from src.zone_detect.slicing_job import slice_pixels, nb_patches
 from src.zone_detect.utils import extract_method, info_extract
 
@@ -105,7 +109,7 @@ def overall_accuracy(npcm: np.ndarray) -> float:
     return 100 * np.trace(npcm) / total
 
 
-def class_IoU(npcm: np.ndarray) -> tuple[np.ndarray, float]:
+def class_IoU(npcm: np.ndarray) -> tuple[np.ndarray, float, float]:
     tp = np.diag(npcm)
     fn = np.sum(npcm, axis=1) - tp
     fp = np.sum(npcm, axis=0) - tp
@@ -114,10 +118,10 @@ def class_IoU(npcm: np.ndarray) -> tuple[np.ndarray, float]:
     ious = 100 * tp / denom
     ious = np.nan_to_num(ious)
 
-    return ious, ious.mean()
+    return ious, ious.mean(), ious.std()
 
 
-def class_precision(npcm: np.ndarray) -> tuple[np.ndarray, float]:
+def class_precision(npcm: np.ndarray) -> tuple[np.ndarray, float, float]:
     tp = np.diag(npcm)
     fp = np.sum(npcm, axis=0) - tp
     fn = np.sum(npcm, axis=1) - tp
@@ -125,10 +129,10 @@ def class_precision(npcm: np.ndarray) -> tuple[np.ndarray, float]:
     precision = tp / (tp + fp)
     precision = np.nan_to_num(precision)  # replaces NaN with 0
 
-    return precision, precision.mean()
+    return precision, precision.mean(), precision.std()
 
 
-def class_recall(npcm: np.ndarray) -> tuple[np.ndarray, float]:
+def class_recall(npcm: np.ndarray) -> tuple[np.ndarray, float, float]:
     tp = np.diag(npcm)
     fp = np.sum(npcm, axis=0) - tp
     fn = np.sum(npcm, axis=1) - tp
@@ -136,10 +140,10 @@ def class_recall(npcm: np.ndarray) -> tuple[np.ndarray, float]:
     recall = tp / (tp + fn)
     recall = np.nan_to_num(recall)  # replaces NaN with 0
 
-    return recall, recall.mean()
+    return recall, recall.mean(), recall.std()
 
 
-def class_fscore(npcm: np.ndarray):
+def class_fscore(npcm: np.ndarray) -> tuple[np.ndarray, float, float]:
     tp = np.diag(npcm)
     fp = np.sum(npcm, axis=0) - tp
     fn = np.sum(npcm, axis=1) - tp
@@ -150,7 +154,7 @@ def class_fscore(npcm: np.ndarray):
     fscore = 2 * precision * recall / (precision + recall) * 100
     fscore = np.nan_to_num(fscore)  # replaces NaN with 0
 
-    return fscore, fscore.mean()
+    return fscore, fscore.mean(), fscore.std()
 
 
 #### COMPUTATION ####
@@ -199,9 +203,9 @@ def compute_metrics_patch(
 
     with np.errstate(divide="ignore", invalid="ignore"):
         # nans are handled don't worry
-        per_c_ious, avg_ious = class_IoU(confmat_cleaned)
+        per_c_ious, avg_ious, std_ious = class_IoU(confmat_cleaned)
         ovr_acc = overall_accuracy(confmat_cleaned)
-        per_c_fscore, avg_fscore = class_fscore(confmat_cleaned)
+        per_c_fscore, avg_fscore, std_fscore = class_fscore(confmat_cleaned)
 
     # save metrics to a json file : raw or post-stitching
     key = f"{method}_{window.col_off}_{window.row_off}"
@@ -216,6 +220,11 @@ def compute_metrics_patch(
                 avg_ious,
                 ovr_acc,
                 avg_fscore,
+            ],
+            "Std_dev_metrics": [
+                std_ious,
+                "undefined",
+                std_fscore,
             ],
             "classes": [classes[i][1] for i in range(1, n_classes + 1)],
             "per_class_iou": list(per_c_ious),
@@ -232,6 +241,7 @@ def add_confusion(
     n_classes: int,
     stride: int,
 ) -> np.ndarray:
+    """Utility function to add confusion matrix for a single pair of prediction and ground truth images."""
     try:
         # loading
         with rasterio.open(pred_path) as src:
@@ -260,6 +270,16 @@ def process_metrics(
     area: float = 0.0,
     carbon: float = 0.0,
 ) -> dict[str, Any]:
+    """Takes aggregated metrics and computes the final metrics for a run (e.g. one method).
+    Args:
+        confmat (np.ndarray): Confusion matrix for the method.
+        config (dict): Configuration
+        info (dict): Information about the method, such as patch size, stride, margin, padding, stitching method.
+        method_times (dict): Dictionary containing the timings for the run, one element corresponding to one whole image
+        method_patches (list[int]): List of number of patches for the run, one element corresponding to the number of patches for one whole image
+        area (float): Total area processed in square meters. Default is 0.0.
+        carbon (float): Total carbon emissions in kg. Default is 0.0.
+    """
 
     patch_size = info["patch_size"]
     stride = info["stride"]
@@ -280,24 +300,28 @@ def process_metrics(
     # metrics
     with np.errstate(divide="ignore", invalid="ignore"):
         # nans are handled dont worry
-        per_c_ious, avg_ious = class_IoU(confmat_cleaned)
+        per_c_ious, avg_ious, std_ious = class_IoU(confmat_cleaned)
         ovr_acc = overall_accuracy(confmat_cleaned)
-        per_c_fscore, avg_fscore = class_fscore(confmat_cleaned)
+        per_c_fscore, avg_fscore, std_fscore = class_fscore(confmat_cleaned)
 
         # get timings
 
         # dict of str : list of float
         norm_data_prep = np.array(method_times["data_prep_time"]) / method_patches
         avg_data_prep = np.mean(norm_data_prep) * mean_patches
+        sigma_data_prep = np.std(norm_data_prep)  # std dev of time normalized per patch
 
         norm_inference = np.array(method_times["pure_infer_time"]) / method_patches
         avg_inference = np.mean(norm_inference) * mean_patches
+        sigma_inference = np.std(norm_inference)
 
         norm_write = np.array(method_times["data_write_time"]) / method_patches
         avg_write = np.mean(norm_write) * mean_patches
+        sigma_write = np.std(norm_write)
 
         norm_time = np.array(method_times["total_time"]) / method_patches
         avg_time = np.mean(norm_time) * mean_patches
+        sigma_time = np.std(norm_time)
 
     metrics = {
         "Method parameters": [
@@ -339,6 +363,18 @@ def process_metrics(
             total_patches,
             area,
             carbon,
+        ],
+        "std_dev_metrics": [
+            std_ious,
+            "undefined",
+            std_fscore,
+            sigma_data_prep,
+            sigma_inference,
+            sigma_write,
+            sigma_time,
+            "undefined",
+            "undefined",
+            "undefined",
         ],
         "classes": [classes[i][1] for i in range(1, n_classes + 1)],
         "per_class_iou": list(per_c_ious),
@@ -419,7 +455,7 @@ def error_rate_loop(truth_dir: Path, out_dir: Path, pred_dir: Path) -> None:
             save=False,
         )
 
-    # aggregate the error rate for each method over all kays
+    # aggregate the error rate for each method over all keys
     methods = dict()
     total = dict()
     for key in dic.keys():
@@ -638,6 +674,64 @@ def log_to_WB(metrics_path: Path, sort_per_param: str = "") -> None:
     wandb.finish()
 
 
+#### RAM USAGE ####
+def get_ram_usage_mb():
+    """Get the current RAM usage of the process in MB.
+    Measuring host RAM and not GPU memory"""
+    process = psutil.Process(os.getpid())
+    return process.memory_info().rss / 1024 / 1024  # RAM usage in MB
+
+
+def model_ram_compare(ckpt_list: list[str]) -> None:
+    """
+    Compare the RAM usage of different models loaded from their checkpoints.
+    """
+    ram_usage = {}
+
+    for ckpt in ckpt_list:
+
+        print(f"Loading model from {ckpt}...")
+        gc.collect()
+
+        model_config = {
+            "model_weights": ckpt,
+            "model_framework": {
+                "HuggingFace": {"org_model": "openmmlab/upernet-swin-small"},
+                "model_provider": "HuggingFace",  # or "SegmentationModelsPytorch"
+            },
+            "channels": [1, 2, 3],  # Example: RGB image
+            "n_classes": 19,  # Example: Binary classification
+        }
+
+        before_ram = get_ram_usage_mb()
+
+        model = load_model(model_config)
+
+        after_ram = get_ram_usage_mb()
+        ram_usage[ckpt] = after_ram - before_ram
+
+        del model
+        gc.collect()
+
+    """# adding onnx model "loading"
+    onnx_ckpt = "/media/DATA/INFERENCE_HS/MODELS_IA/FLAIR1/swin-upernet-small_IRV_SET1/checkpoints/openmmlab/upernet-swin-small_cpu_1x3x512x512.onnx"
+
+    gc.collect()
+    before_ram = get_ram_usage_mb()
+
+    ort_session = ort.InferenceSession(onnx_ckpt, providers=["CPUExecutionProvider"])
+
+    after_ram = get_ram_usage_mb()
+    ram_usage[onnx_ckpt] = after_ram - before_ram
+
+    del ort_session
+    gc.collect()"""
+
+    print("\nRAM Usage Comparison:")
+    for ckpt, usage in ram_usage.items():
+        print(f"{Path(ckpt).stem}: {usage:.2f} MB")
+
+
 if __name__ == "__main__":
     # compute a posteriori metrics = error rate
 
@@ -647,7 +741,7 @@ if __name__ == "__main__":
 
     # error_rate_loop(Path(truth_dir), Path(out_dir), Path(pred_dir))
 
-    metrics_path = "/media/DATA/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out20250623/small_onnx_gpu_morning-batch:)/metrics.json"
+    metrics_path = "/media/DATA/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out20250630/20250630_small_pytorch_gpu_baseline/metrics.json"
 
     # analyze_metrics((Path(metrics_path)))
 
