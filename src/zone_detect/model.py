@@ -18,6 +18,11 @@ class FLAIR_ModelFactory:
     """
     A factory class for creating models based on the provided configuration.
     This class supports models from both SegmentationModelsPytorch and HuggingFace.
+    Arguments:
+        config (Mapping): A dictionary containing the model configuration, with at least
+                          the keys 'model_framework', 'model_provider', 'channels', and 'n_classes'.
+                          For SegmentationModelsPytorch, it should include 'encoder_decoder'.
+                          For HuggingFace, it should include 'org_model'.
     """
 
     config: Mapping
@@ -89,6 +94,10 @@ def load_model(config: dict) -> nn.Module:
     state_dict = get_module(checkpoint=checkpoint)
     model.load_state_dict(state_dict=state_dict, strict=True)
 
+    # check model data type
+    # dtypes = set(param.dtype for param in model.parameters())
+    # print("Model uses these data types:", dtypes)
+
     return model
 
 
@@ -100,7 +109,10 @@ def opti_pruna(model: nn.Module) -> nn.Module:
     smash_config = SmashConfig()
 
     # smash_config["pruner"] = "torch_unstructured"
+    # smash_config["torch_unstructured_pruning_method"] = "random"
+    # smash_config["torch_unstructured_sparsity"] = 0.075
     smash_config["quantizer"] = "half"
+    # smash_config["quantizer"] = "torch_dynamic"
     # smash_config["compiler"] = "torch_compile"
 
     model = smash(model=model, smash_config=smash_config)

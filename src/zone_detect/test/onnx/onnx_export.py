@@ -24,7 +24,7 @@ from src.zone_detect.model import load_model
 
 def check_export_onnx(onnx_path: Path):
     """
-    Check if the ONNX export is successful.
+    Check if the ONNX export is successful (existence, well-formed).
     """
     if onnx_path is None:
         print("No ONNX file found.")
@@ -35,22 +35,24 @@ def check_export_onnx(onnx_path: Path):
         print("ONNX model is well formed, whatever that means.")
 
 
-def export_onnx(config: dict[str, Any], out_name: str = "opti"):
+def export_onnx(config: dict[str, Any]):
     """
-    Export a HuggingFace model to ONNX format.
+    Export a HuggingFace model to ONNX format, based on a checkpoint file.
     """
     save_directory = Path(config["model_weights"]).parent
-
-    model_name = config["model_framework"]["HuggingFace"]["org_model"]
-    filename = f"{model_name}_{out_name}.onnx" if out_name else f"{model_name}.onnx"
-    output_path = save_directory / filename
-    output_path.parent.mkdir(parents=True, exist_ok=True)
 
     patch_size = config.get(
         "img_pixels_detection", 512
     )  # do we really need to ? can't it be dynamic ?
     n_bands = len(config["channels"])
-    batch_size = config.get("batch_size", 1)
+    batch_size = config.get("batch_size", 2)
+
+    size_name = f"{batch_size}x{n_bands}x{patch_size}x{patch_size}"
+
+    model_name = config["model_framework"]["HuggingFace"]["org_model"]
+    filename = f"{model_name}_{size_name}.onnx"
+    output_path = save_directory / filename
+    output_path.parent.mkdir(parents=True, exist_ok=True)
 
     model = load_model(config)
     model.eval()
@@ -70,8 +72,7 @@ def export_onnx(config: dict[str, Any], out_name: str = "opti"):
         )
 
         if onnx_export is not None:
-            if out_name == "opti":
-                onnx_export.optimize()
+            onnx_export.optimize()
 
             # simplify with ORT
             simp_onnx_path = simplify_onnx(output_path, onnx_export)
@@ -86,6 +87,7 @@ def export_onnx(config: dict[str, Any], out_name: str = "opti"):
 
 
 def get_onnx_path(config: dict[str, Any]) -> Path:
+    """Get the ONNX model path based on the provided checkpoints file. If no ONNX export was found, export the model to ONNX format."""
 
     model_name = config["model_framework"]["HuggingFace"]["org_model"]
     model_names = model_name.split("/")  # Get the last part of the model name
@@ -141,7 +143,7 @@ def inference_onnx(
 
 
 def dummy_input_onnx(input_img: Path):
-    """Returns a dummy input tensor of shape (batch_size (1 here), num_bands, patch_size, patch_size)"""
+    """Returns a dummy input tensor of shape (batch_size, num_bands, patch_size, patch_size)"""
 
     # fixed parameters for test purposes
     # test on the first tile
@@ -251,6 +253,9 @@ def compare_to_pytorch(
 
 
 def patch_constant_nodes(model: onnx.ModelProto) -> onnx.ModelProto:
+    """Patch Constant nodes in the ONNX model to ensure they have a 'value' attribute.
+    This is necessary for compatibility with some ONNX runtimes that expect a 'value' attribute in Constant nodes.
+    """
     new_nodes = []
 
     for node in model.graph.node:
@@ -319,6 +324,9 @@ def simplify_onnx(onnx_path: Path, onnx_program: Optional[ONNXProgram] = None) -
 
 
 def debug_onnx_model(onnx_path: Path):
+    """DEBUG PURPOSES
+
+    Debug the ONNX model to check for missing 'value' attributes in Constant nodes."""
     model = onnx.load(str(onnx_path))
     for i, node in enumerate(model.graph.node):
         if node.op_type == "Constant":
@@ -331,15 +339,12 @@ def debug_onnx_model(onnx_path: Path):
                     print(f"❗ Missing 'value' attribute in {node.name} node {i}")
 
 
-#### ResNet-UNet RVB model ###
-# convolution ?
-
 if __name__ == "__main__":
 
     save_directory = "/home/ign.fr/SHys/FLAIR-1/src/zone_detect/test/onnx"
 
     model_name = "openmmlab/upernet-swin-small"
-    model_ckpt = "/media/DATA/INFERENCE_HS/MODELS_IA/FLAIR1/swin-upernet-small_IRV_SET1/checkpoints/ckpt-epoch=84-val_loss=0.37_00_HF_SwinUpernet_Small_IR-R-G_set1.ckpt"
+    model_ckpt = "/home/ign.fr/SHys/FLAIR-1/0testing_saves/20250630_pruna-torch_dynamic/converted_model.ckpt"
 
     config = {
         "model_framework": {
@@ -355,16 +360,11 @@ if __name__ == "__main__":
     }
 
     # Export the HuggingFace model to ONNX
-    out_opti = "opti"
-    out_simple = "not-opti"
-    onnx_opti = export_onnx(config, out_name=out_opti)
-    # onnx_simple = export_onnx_hf(config, Path(save_directory), out_name=out_simple)
+    onnx_opti = export_onnx(config)
 
     input_img = "/media/DATA/INFERENCE_HS/DATA/dataset_zone_last/ortho/D037_2021/UU_S1_4/037_2021_UU_S1_4_IRC.tif"
 
     dummy = dummy_input_onnx(Path(input_img))
-
-    # print(f"Dummy input shape: {dummy.shape}")
 
     """
     pred_simple = inference_onnx(Path(onnx_simple), dummy)
@@ -379,9 +379,5 @@ if __name__ == "__main__":
     compare_to_pytorch(config, Path(onnx_opti), dummy)
     """
 
-    # Simplify the ONNX model
-    print("Simplifying the ONNX model...")
-    simplified_onnx_opti_path = simplify_onnx(onnx_opti)
-
-    print("Comparing simplified ONNX model with PyTorch model...")
-    compare_to_pytorch(config, simplified_onnx_opti_path, dummy)
+    print("Comparing ONNX model with PyTorch model...")
+    compare_to_pytorch(config, onnx_opti, dummy)
