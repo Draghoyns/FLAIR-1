@@ -144,5 +144,5 @@ wandb/
 *.csv
 
 # saved files while testing
-!testing_saves/
+0testing_saves/
 credentials copy.json
