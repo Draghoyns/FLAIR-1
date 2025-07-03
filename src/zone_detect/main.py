@@ -2,6 +2,7 @@ import argparse
 import datetime
 import json
 import sys
+import numpy as np
 from tqdm import tqdm
 import warnings
 
@@ -27,9 +28,11 @@ from src.zone_detect.stitching_job import stitching
 
 from src.zone_detect.metrics.metrics import batch_metrics, compute_metrics_patch
 from src.zone_detect.test.onnx.onnx_export import get_onnx_path
+from src.zone_detect.test.test import distribution_max_proba_np
 from src.zone_detect.test.tiles import get_stride
 
 from src.zone_detect.utils import (
+    batchmode_path_setup,
     gen_param_combination,
     open_images,
     setup_device,
@@ -76,7 +79,7 @@ class Logger(object):
         self.log.flush()
 
 
-# we're not handling multiple inputs yet
+# TODO: modify log to handle multiple inputs
 def conf_log(
     config: Config,
     resolution: tuple[float, float],
@@ -203,9 +206,9 @@ def prepare_model(config: Config, device: torch.device) -> Config:
 
     onnx = config["onnx"]
     arg_package = dict()
-    device_key = "gpu" if config["use_gpu"] else "cpu"
 
     if onnx:
+        device_key = "gpu" if config["use_gpu"] else "cpu"
         model_type = "onnx"
         print(f"""    [ ] using ONNX model...""")
 
@@ -263,7 +266,7 @@ def prepare_output(
     out_profile = profile.copy()
     out_profile.update(
         {
-            "dtype": "uint8",
+            "dtype": "uint16",
             "compress": "LZW",
             "driver": "GTiff",
             "BIGTIFF": "YES",
@@ -401,13 +404,19 @@ def run_pipeline(config: Config) -> None:
                     stitch,
                     stride,
                 )
+
+                prediction_to_write = prediction.copy()
+                prediction_to_write[1:] = prediction[1:] * 65535
+                prediction_to_write = prediction_to_write.astype("uint16")
+                # add threshold to post process probabilities -> e.g. range [0.5, 0.9]
+
                 # write
                 if output_type == "argmax":
-                    out.write_band([1, 2], prediction, window=window)
+                    out.write_band([1, 2], prediction_to_write, window=window)
                 else:
                     out.write_band(
                         [i for i in range(1, n_classes + 1)],
-                        prediction,
+                        prediction_to_write,
                         window=window,
                     )
                 data_write_time += (
@@ -457,69 +466,19 @@ def run_pipeline(config: Config) -> None:
             config["times"] = method_times
             config["nb_patches"] = method_patches
 
+            # per patch metrics
             with open(metrics_json, "w") as f:
                 json.dump(method_metrics_per_patch, f, indent=2)
 
             print(f"""    [X] done writing metrics to {metrics_json.name} file.\n""")
             processed_area += single_area
 
-    '''else:
-
-        # default configuration : exact clipping and default sized tiling
-
-        stride = get_stride(config)[0]
-        dataset, data_loader, sliced_dataframe, profile = prepare_data(config, stride)
-
-        # prepare output raster
-        out, path_out = prepare_output(config, profile)
-        # inference loop
-
-        print(f"""    [ ] starting inference...\n""")
-        for samples in tqdm(data_loader):
-
-            predictions, indices = inference(
-                model_type=model_type,
-                args=model_args,
-                config=config,
-                samples=samples,
-            )
-
-            # writing windowed raster to output rastert
-            for prediction, index in zip(predictions, indices):
-
-                prediction, window = stitching(
-                    config,
-                    sliced_dataframe,
-                    prediction,
-                    index,
-                    out,
-                    "exact-clipping",
-                    stride,
-                )
-                # write
-                if output_type == "argmax":
-                    out.write_band([1, 2], prediction, window=window)
-                else:
-                    out.write_band(
-                        [i for i in range(1, n_classes + 1)], prediction, window=window
-                    )
-
-        out.close()
-        dataset.close_raster()
-        print(
-            f"""    
-                        
-            [X] done writing to {path_out.split('/')[-1]} raster file.\n"""
-        )'''
-
     sys.stdout = sys.__stdout__
 
     config.update({"processed_area": processed_area})
 
 
-def batch_metrics_pipeline(
-    config: Config, truth_dpt: Path, device: torch.device
-) -> None:
+def batch_metrics_pipeline(config: Config, truth_dpt: Path) -> None:
     """
     Compute metrics for a batch of images.
     Args:
@@ -531,10 +490,6 @@ def batch_metrics_pipeline(
     data_type = config["data_type"]  # IRC, RVB etc.
     file_pattern = f"*{data_type}.tif"
     compute_metrics = config["metrics"]
-
-    # output file
-    if compute_metrics:
-        assert out_json, "Please provide an output path for the metrics"
 
     # __________INFERENCE__________#
     inputs_dpt = Path(config["input_path"])
@@ -595,23 +550,9 @@ def main():
     config = prepare_model(config, device)
 
     if args["batch_mode"]:
-        gt_dir = Path(config["truth_root"])
-        gt_dpt = gt_dir / Path(config["truth_path"]).parts[-3]
+        config, gt_dpt = batchmode_path_setup(config, args, use_gpu)
 
-        model_nickname = config["model_name"].split("-")[-1]
-        model_type = "onnx" if args["onnx"] else "pytorch"
-        device_type = "gpu" if use_gpu else "cpu"
-
-        new_folder = f"{model_nickname}_{model_type}_{device_type}"
-
-        config.update(
-            {
-                "output_path": f"{config['output_path']}/{new_folder}",
-                "metrics_out": f"{config['output_path']}/{new_folder}/metrics.json",
-            }
-        )
-
-        batch_metrics_pipeline(config, gt_dpt, device)
+        batch_metrics_pipeline(config, gt_dpt)
     else:
         run_pipeline(config)
 
