@@ -1,5 +1,5 @@
 #### OUTPUT
-output_path: .
+output_path: /media/DATA/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out20250630 #.
 output_name: D037_2021_UU_S1_4_IRC-ARGMAX-S # stem
 output_type: argmax # prediction type
 
@@ -21,11 +21,14 @@ model_framework:
 model_name: upernet-swin-small
 encoder_name: swin-small
 
-batch_size:  1 # for DataLoader
+batch_size:  2 # for DataLoader
 use_gpu: true 
 num_worker: 8
 
-onnx: true # if true, use onnx model, else use pytorch model
+
+#### OPTIMIZATION SWITCHES
+pruna : false
+onnx: false # if true, use onnx model, else use pytorch model
 log_verbose: false
 save_logs: false # if true, save logs in output_path
 
