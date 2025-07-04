@@ -62,6 +62,9 @@ def preprocess_config(config: Config) -> Config:
     assert (
         2 * config["margin"] < config["img_pixels_detection"]
     ), "Margin should be less than half of img_pixels_detection"
+    if config["margin"] < 1:
+        # if margin is a percentage, convert to int (pixels)
+        config["margin"] = int(config["margin"] * config["img_pixels_detection"])
     assert config["output_type"] in [
         "class_prob",
         "argmax",
