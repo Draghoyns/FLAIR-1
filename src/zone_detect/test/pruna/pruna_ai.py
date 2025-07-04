@@ -7,10 +7,14 @@ from src.zone_detect.model import load_model
 # define config
 config = {
     "model_framework": {
-        "model_provider": "HuggingFace",
+        "model_provider": "SegmentationModelsPytorch",
         "HuggingFace": {"org_model": "openmmlab/upernet-swin-small"},
+        "SegmentationModelsPytorch": {
+            "encoder_decoder": "resnet34_unet",
+        },
     },
-    "model_weights": "/media/DATA/INFERENCE_HS/MODELS_IA/FLAIR1/swin-upernet-small_IRV_SET1/checkpoints/ckpt-epoch=84-val_loss=0.37_00_HF_SwinUpernet_Small_IR-R-G_set1.ckpt",
+    "model_weights": "/media/DATA/INFERENCE_HS/MODELS_IA/FLAIR1/unet_resnet/FLAIR-INC_rgb_15cl_resnet34-unet_weights.pth",
+    # "/media/DATA/INFERENCE_HS/MODELS_IA/FLAIR1/swin-upernet-small_IRV_SET1/checkpoints/ckpt-epoch=84-val_loss=0.37_00_HF_SwinUpernet_Small_IR-R-G_set1.ckpt",
     "channels": [
         1,
         2,
@@ -30,7 +34,7 @@ model.to(device)
 
 smash_config = SmashConfig()
 quantization_option = "torch_dynamic"
-compiler_option = "torch_compile"
+# compiler_option = "torch_compile"
 
 # smash_config["compiler"] = compiler_option
 # smash_config["pruner"] = "torch_unstructured"
@@ -52,7 +56,9 @@ print("Step 2 : inference...")
 imgs = torch.randn(2, 3, 512, 512).to(device)
 
 with torch.no_grad():
-    logits = optimized_model(imgs).logits
+    logits = optimized_model(imgs)
+    if config["model_framework"]["model_provider"] == "HuggingFace":
+        logits = logits.logits
 
 print("\tInference done, logits:")
 print("\tShape:", logits.shape)

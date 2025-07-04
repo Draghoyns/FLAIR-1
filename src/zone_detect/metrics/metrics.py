@@ -688,20 +688,33 @@ def model_ram_compare(ckpt_list: list[str]) -> None:
     """
     ram_usage = {}
 
+    model_config = {
+        "model_weights": "",
+        "model_framework": {
+            "SegmentationModelsPytorch": {"encoder_decoder": "resnet34_unet"},
+            "model_provider": "",  # or "SegmentationModelsPytorch"
+            "HuggingFace": {"org_model": "openmmlab/upernet-swin-small"},
+        },
+        "channels": [1, 2, 3],
+        "n_classes": 19,
+    }
+
     for ckpt in ckpt_list:
 
         print(f"Loading model from {ckpt}...")
         gc.collect()
 
-        model_config = {
-            "model_weights": ckpt,
-            "model_framework": {
-                "HuggingFace": {"org_model": "openmmlab/upernet-swin-small"},
-                "model_provider": "HuggingFace",  # or "SegmentationModelsPytorch"
-            },
-            "channels": [1, 2, 3],  # Example: RGB image
-            "n_classes": 19,  # Example: Binary classification
-        }
+        model_config["model_weights"] = ckpt
+
+        resnet = Path(ckpt).stem
+        resnet = "resnet" in resnet
+
+        if resnet:
+            model_config["model_framework"][
+                "model_provider"
+            ] = "SegmentationModelsPytorch"
+        else:
+            model_config["model_framework"]["model_provider"] = "HuggingFace"
 
         before_ram = get_ram_usage_mb()
 
@@ -741,8 +754,19 @@ if __name__ == "__main__":
 
     # error_rate_loop(Path(truth_dir), Path(out_dir), Path(pred_dir))
 
-    metrics_path = "/media/DATA/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out20250630/20250630_small_pytorch_gpu_baseline/metrics.json"
+    metrics_path = "/media/DATA/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out20250703/20250703_small_pytorch_gpu_default-resnet/metrics.json"
 
     # analyze_metrics((Path(metrics_path)))
 
     log_to_WB(Path(metrics_path), sort_per_param="patch size, margin")
+
+    ckpt_list = [
+        # "/media/DATA/INFERENCE_HS/MODELS_IA/FLAIR1/swin-upernet-small_IRV_SET1/checkpoints/ckpt-epoch=84-val_loss=0.37_00_HF_SwinUpernet_Small_IR-R-G_set1.ckpt",
+        # "/home/ign.fr/SHys/FLAIR-1/0testing_saves/20250630_pruna-half/pruna_half_converted.ckpt",
+        # "/home/ign.fr/SHys/FLAIR-1/0testing_saves/20250630_pruna-torch_dynamic/pruna_torch-dynamic_converted.ckpt",
+        "/home/ign.fr/SHys/FLAIR-1/0testing_saves/20250703_pruna-torch_dynamic_resnet/resnet_torch-dynamic_converted_model.ckpt",
+        "/media/DATA/INFERENCE_HS/MODELS_IA/FLAIR1/unet_resnet/FLAIR-INC_rgb_15cl_resnet34-unet_weights.pth",
+    ]
+
+    # for _ in range(10):
+    # model_ram_compare(ckpt_list)

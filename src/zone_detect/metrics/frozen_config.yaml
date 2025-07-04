@@ -1,5 +1,5 @@
 #### OUTPUT
-output_path: /media/DATA/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out20250630 #.
+output_path: /media/DATA/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out20250703 #.
 output_name: D037_2021_UU_S1_4_IRC-ARGMAX-S # stem
 output_type: argmax # prediction type
 
@@ -9,14 +9,16 @@ data_type: IRC # IR, IRC, RVB, RVBI, RVBIE
 #### PARAMETERS
 channels: [1, 2, 3, ] 
 img_pixels_detection: 512 # best for swin
-margin: 0 # for clipping, in pixels
+margin: 0.125 # for clipping, in pixels
 
 #### MODEL
 model_framework: 
-    model_provider: HuggingFace 
+    model_provider: SegmentationModelsPytorch
     
     HuggingFace:
         org_model: openmmlab/upernet-swin-small
+    SegmentationModelsPytorch:
+        encoder_decoder: resnet34_unet
 
 model_name: upernet-swin-small
 encoder_name: swin-small

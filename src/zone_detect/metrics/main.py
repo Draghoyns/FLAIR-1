@@ -406,4 +406,10 @@ if __name__ == "__main__":
 
 # command to run the script:
 
-# python src/zone_detect/metrics/main.py --data=/home/ign.fr/SHys/FLAIR-1/data_paths.csv --ckpt=/media/DATA/INFERENCE_HS/MODELS_IA/FLAIR1/swin-upernet-small_IRV_SET1/checkpoints/ckpt-epoch=84-val_loss=0.37_00_HF_SwinUpernet_Small_IR-R-G_set1.ckpt
+#### SWIN
+# python src/zone_detect/metrics/main.py --data=/home/ign.fr/SHys/FLAIR-1/0testing_saves/data_paths.csv --ckpt=/media/DATA/INFERENCE_HS/MODELS_IA/FLAIR1/swin-upernet-small_IRV_SET1/checkpoints/ckpt-epoch=84-val_loss=0.37_00_HF_SwinUpernet_Small_IR-R-G_set1.ckpt
+
+#### UNET
+# python src/zone_detect/metrics/main.py --data=/home/ign.fr/SHys/FLAIR-1/0testing_saves/data_paths.csv --ckpt=/media/DATA/INFERENCE_HS/MODELS_IA/FLAIR1/unet_resnet/FLAIR-INC_rgb_15cl_resnet34-unet_weights.pth
+
+# python src/zone_detect/metrics/main.py --data=/home/ign.fr/SHys/FLAIR-1/0testing_saves/data_paths.csv --ckpt=/home/ign.fr/SHys/FLAIR-1/0testing_saves/20250703_pruna-torch_dynamic_resnet/resnet_torch-dynamic_converted_model.ckpt
