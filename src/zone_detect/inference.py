@@ -38,6 +38,9 @@ def inference_pt(
     samples: dict[str, torch.Tensor],
 ) -> tuple[np.ndarray, np.ndarray]:
     imgs = samples["image"].to(device, non_blocking=(device.type == "cuda"))
+    precision = config.get("precision", "fp32")
+    if precision == "int8":
+        imgs = imgs.to(torch.bfloat16)
     if use_gpu:
         torch.cuda.synchronize()
     with torch.no_grad():
@@ -46,6 +49,10 @@ def inference_pt(
             logits = logits.logits
         logits.to(device)
     predictions = torch.softmax(logits, dim=1)
+
+    if precision == "int8":
+        predictions = predictions.to(torch.float32)
+
     predictions = predictions.cpu().numpy()
     indices = samples["index"].cpu().numpy()
 

@@ -10,6 +10,7 @@ import torch.nn as nn
 from pruna import SmashConfig, smash
 
 import segmentation_models_pytorch as smp
+from torchao.quantization import int8_weight_only, quantize_
 from transformers import AutoModelForSemanticSegmentation, AutoConfig
 
 
@@ -69,7 +70,7 @@ class FLAIR_ModelFactory:
 
 def get_module(checkpoint: str | Path) -> Mapping:
     if checkpoint is not None and os.path.isfile(checkpoint):
-        weights = torch.load(checkpoint, map_location="cpu")
+        weights = torch.load(checkpoint, map_location="cpu", weights_only=False)
         if checkpoint.endswith(".ckpt"):  # type: ignore
             weights = weights["state_dict"]
     else:
@@ -92,7 +93,11 @@ def load_model(config: dict) -> nn.Module:
     model = model_factory.seg_model
 
     state_dict = get_module(checkpoint=checkpoint)
-    model.load_state_dict(state_dict=state_dict, strict=True)
+
+    precision = config.get("precision", "fp32")
+    strict = precision == "fp32"  # allow mismatch if quantized
+
+    model.load_state_dict(state_dict=state_dict, strict=strict)
 
     # check model data type
     # dtypes = set(param.dtype for param in model.parameters())

@@ -20,6 +20,8 @@ import onnxruntime as ort
 import torch
 from torch.utils.data import DataLoader
 
+from torchao.quantization import int8_weight_only, quantize_
+
 from src.zone_detect.dataset import Sliced_Dataset
 from src.zone_detect.inference import inference
 from src.zone_detect.model import load_model, opti_pruna
@@ -28,8 +30,6 @@ from src.zone_detect.stitching_job import stitching
 
 from src.zone_detect.metrics.metrics import batch_metrics, compute_metrics_patch
 from src.zone_detect.test.onnx.onnx_export import get_onnx_path
-from src.zone_detect.test.test import distribution_max_proba_np
-from src.zone_detect.test.tiles import get_stride
 
 from src.zone_detect.utils import (
     batchmode_path_setup,
@@ -205,7 +205,10 @@ def prepare_model(config: Config, device: torch.device) -> Config:
     )
 
     onnx = config["onnx"]
-    arg_package = dict()
+    arg_package = {
+        "device": device,
+        "use_gpu": config["use_gpu"],
+    }
 
     if onnx:
         device_key = "gpu" if config["use_gpu"] else "cpu"
@@ -221,6 +224,19 @@ def prepare_model(config: Config, device: torch.device) -> Config:
         arg_package.update(
             {
                 "ort_session": ort_session,
+            }
+        )
+    elif config.get("precision", "fp32") == "int8":
+        model_type = "pytorch"
+        model = load_model(config)
+
+        model = model.eval().to(device).to(torch.bfloat16)
+
+        quantize_(model, int8_weight_only(group_size=32))  # type: ignore
+
+        arg_package.update(
+            {
+                "model": model,
             }
         )
 
@@ -240,12 +256,13 @@ def prepare_model(config: Config, device: torch.device) -> Config:
         if pruna:
             model = opti_pruna(model)
 
-        model.eval()
-        model = model.to(device)
+        model = model.eval().to(device)
         print(f"""    [x] loaded model and weights...""")
 
         arg_package.update(
-            {"model": model, "device": device, "use_gpu": config["use_gpu"]}
+            {
+                "model": model,
+            }
         )
 
     config.update({"model_type": model_type, "model_args": arg_package})
