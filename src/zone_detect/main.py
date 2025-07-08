@@ -226,20 +226,6 @@ def prepare_model(config: Config, device: torch.device) -> Config:
                 "ort_session": ort_session,
             }
         )
-    elif config.get("precision", "fp32") == "int8":
-        model_type = "pytorch"
-        model = load_model(config)
-
-        model = model.eval().to(device).to(torch.bfloat16)
-
-        quantize_(model, int8_weight_only(group_size=32))  # type: ignore
-
-        arg_package.update(
-            {
-                "model": model,
-            }
-        )
-
     else:
         model_type = "pytorch"
         print(

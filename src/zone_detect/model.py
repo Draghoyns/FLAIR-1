@@ -10,7 +10,10 @@ import torch.nn as nn
 from pruna import SmashConfig, smash
 
 import segmentation_models_pytorch as smp
-from torchao.quantization import int8_weight_only, quantize_
+from torchao.quantization import Int8WeightOnlyConfig, quantize_, int8_weight_only
+from transformers import (
+    TorchAoConfig,
+)  # it may break the thing because model not exactly transformer
 from transformers import AutoModelForSemanticSegmentation, AutoConfig
 
 
@@ -97,11 +100,22 @@ def load_model(config: dict) -> nn.Module:
     precision = config.get("precision", "fp32")
     strict = precision == "fp32"  # allow mismatch if quantized
 
-    model.load_state_dict(state_dict=state_dict, strict=strict)
+    if precision == "int8":
 
-    # check model data type
-    # dtypes = set(param.dtype for param in model.parameters())
-    # print("Model uses these data types:", dtypes)
+        model = model.eval().to(torch.bfloat16)
+        quantize_(model, Int8WeightOnlyConfig(group_size=32))  # type: ignore
+        model = model.to("cuda")
+
+        for name, module in model.named_modules():
+            if "QuantLinear" in str(type(module)):
+                print(f"{name}: Quantized Linear layer")
+            else:
+                print(f"{name}: {type(module).__name__}")
+
+    model.load_state_dict(
+        state_dict=state_dict,
+        strict=strict,
+    )
 
     return model
 

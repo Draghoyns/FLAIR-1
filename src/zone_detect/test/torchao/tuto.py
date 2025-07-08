@@ -49,7 +49,7 @@ model = load_model(model_config)
 print("Model loaded successfully!")
 
 # model = model.eval().to("cuda")
-model = model.eval().to("cuda")  # from torchao tutorial
+model = model.eval()  # from torchao tutorial
 
 # try compiling (optional) (from torchao tutorial)
 # TODO: further check docs
