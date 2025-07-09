@@ -139,6 +139,9 @@ dmypy.json
 # Weights and Biases files
 wandb/
 
+# Olive files
+.olive-cache/
+
 # images
 *.png 
 *.csv
