@@ -2,7 +2,6 @@ import argparse
 import datetime
 import json
 import sys
-import numpy as np
 from tqdm import tqdm
 import warnings
 
@@ -28,8 +27,6 @@ from src.zone_detect.stitching_job import stitching
 
 from src.zone_detect.metrics.metrics import batch_metrics, compute_metrics_patch
 from src.zone_detect.test.onnx.onnx_export import get_onnx_path
-from src.zone_detect.test.test import distribution_max_proba_np
-from src.zone_detect.test.tiles import get_stride
 
 from src.zone_detect.utils import (
     batchmode_path_setup,
@@ -57,9 +54,6 @@ argParser.add_argument(
 argParser.add_argument("-m", "--metrics", action="store_true", help="compute metrics")
 argParser.add_argument(
     "-b", "--batch_mode", action="store_true", help="run on a batch of input images"
-)
-argParser.add_argument(
-    "-o", "--onnx", action="store_true", help="use ONNX model instead of PyTorch"
 )
 
 
@@ -204,7 +198,7 @@ def prepare_model(config: Config, device: torch.device) -> Config:
     """
     )
 
-    onnx = config["onnx"]
+    onnx = config.get("onnx", False)
     arg_package = dict()
 
     if onnx:
@@ -236,12 +230,10 @@ def prepare_model(config: Config, device: torch.device) -> Config:
         ## loading model and weights
         model = load_model(config)
 
-        pruna = config.get("pruna", False)
-        if pruna:
+        if config.get("pruna", False):
             model = opti_pruna(model)
 
-        model.eval()
-        model = model.to(device)
+        model = model.eval().to(device)
         print(f"""    [x] loaded model and weights...""")
 
         arg_package.update(
@@ -540,7 +532,6 @@ def batch_metrics_pipeline(config: Config, truth_dpt: Path) -> None:
 # __________Main function___________#
 def main():
 
-    # reading yaml
     args = argParser.parse_args().__dict__
 
     # setting up device and log
@@ -550,7 +541,7 @@ def main():
     config = prepare_model(config, device)
 
     if args["batch_mode"]:
-        config, gt_dpt = batchmode_path_setup(config, args, use_gpu)
+        config, gt_dpt = batchmode_path_setup(config, use_gpu)
 
         batch_metrics_pipeline(config, gt_dpt)
     else:

@@ -322,7 +322,6 @@ def setup_indiv_path(config: Config, identifier: str) -> tuple[Config, str]:
 
 def batchmode_path_setup(
     config: Config,
-    args: dict,
     use_gpu: bool,
 ) -> tuple[Config, Path]:
 
@@ -333,7 +332,7 @@ def batchmode_path_setup(
     gt_dpt = gt_dir / Path(config["truth_path"]).parts[-3]
 
     model_nickname = config["model_name"].split("-")[-1]
-    model_type = "onnx" if args["onnx"] else "pytorch"
+    model_type = "onnx" if config.get("onnx", False) else "pytorch"
     device_type = "gpu" if use_gpu else "cpu"
 
     new_folder = f"{model_nickname}_{model_type}_{device_type}"

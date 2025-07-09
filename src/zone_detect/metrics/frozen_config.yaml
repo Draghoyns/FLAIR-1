@@ -12,6 +12,7 @@ img_pixels_detection: 512 # best for swin
 margin: 0.125 # for clipping, in pixels
 
 #### MODEL
+model_weights: ""
 model_framework: 
     model_provider: SegmentationModelsPytorch
     

@@ -12,6 +12,8 @@ from pruna import SmashConfig, smash
 import segmentation_models_pytorch as smp
 from transformers import AutoModelForSemanticSegmentation, AutoConfig
 
+from src.flair.utils import read_config
+
 
 @dataclass
 class FLAIR_ModelFactory:
@@ -99,6 +101,22 @@ def load_model(config: dict) -> nn.Module:
     # print("Model uses these data types:", dtypes)
 
     return model
+
+
+def load_model_from_cfg_path(cfg_path: str) -> nn.Module:
+    """
+    Load a model from a givne file.
+    Args:
+        cfg_path (str): Path to the configuration file.
+    Returns:
+        nn.Module: The loaded model.
+    """
+
+    if not os.path.exists(cfg_path):
+        raise FileNotFoundError(f"Config file {cfg_path} does not exist.")
+    config = read_config({"conf": cfg_path})
+
+    return load_model(config)
 
 
 def opti_pruna(model: nn.Module) -> nn.Module:
