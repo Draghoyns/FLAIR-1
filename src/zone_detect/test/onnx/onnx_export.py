@@ -89,6 +89,12 @@ def export_onnx(config: dict[str, Any]):
 def get_onnx_path(config: dict[str, Any]) -> Path:
     """Get the ONNX model path based on the provided checkpoints file. If no ONNX export was found, export the model to ONNX format."""
 
+    weights = config.get("model_weights", "")
+
+    if weights.endswith(".onnx"):
+        print(f"Using existing ONNX model at {weights}")
+        return Path(weights)
+
     model_name = config["model_framework"]["HuggingFace"]["org_model"]
     model_names = model_name.split("/")  # Get the last part of the model name
     # e.g. "openmmlab/upernet-swin-small" -> "upernet-swin-small"

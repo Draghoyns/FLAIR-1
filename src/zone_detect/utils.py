@@ -26,7 +26,6 @@ def read_config(arguments: dict) -> Config:
     config["metrics"] = arguments.get("metrics", True)
     config["batch_mode"] = arguments.get("batch_mode", False)
     config["compare"] = arguments.get("compare", False)
-    config["onnx"] = arguments.get("onnx", False)
 
     return preprocess_config(config)
 
@@ -79,11 +78,13 @@ def preprocess_config(config: Config) -> Config:
     weights_path = config.get("model_weights", "")
     if weights_path != "":
         assert os.path.isfile(weights_path), "Model weights file does not exist."
-        if os.path.splitext(weights_path)[1] not in [".pth", ".ckpt"]:
+        if os.path.splitext(weights_path)[1] not in [".pth", ".ckpt", ".onnx"]:
             raise ValueError(
-                "Model weights should be a .pth or .ckpt file. "
+                "Model weights should be a .pth, .ckpt or .onnx file. "
                 f"Got {os.path.splitext(weights_path)[1]}"
             )
+        if os.path.splitext(weights_path)[1] == ".onnx":
+            config["onnx"] = True
 
     if config["compare"]:
 
@@ -322,7 +323,6 @@ def setup_indiv_path(config: Config, identifier: str) -> tuple[Config, str]:
 
 def batchmode_path_setup(
     config: Config,
-    args: dict,
     use_gpu: bool,
 ) -> tuple[Config, Path]:
 
@@ -333,7 +333,7 @@ def batchmode_path_setup(
     gt_dpt = gt_dir / Path(config["truth_path"]).parts[-3]
 
     model_nickname = config["model_name"].split("-")[-1]
-    model_type = "onnx" if args["onnx"] else "pytorch"
+    model_type = "onnx" if config.get("onnx", False) else "pytorch"
     device_type = "gpu" if use_gpu else "cpu"
 
     new_folder = f"{model_nickname}_{model_type}_{device_type}"
