@@ -1,0 +1,29 @@
+{
+    "input_model": {
+        "type": "PytorchModel",
+        "model_path": "src/zone_detect/metrics/frozen_config.yaml", 
+        "model_script": "src/zone_detect/model.py",
+        "model_loader": "load_model_from_cfg_path"
+    },
+        "passes" : {
+        "mb": {
+            "type": "",
+            "precision": "",
+            "int4_block_size": 32,
+            "int4_accuracy_level": 4,
+            "int4_op_types_to_quantize": [ "MatMul", "Gather" ],
+            "save_as_external_data": true
+        },
+        "gs": {
+            "type": "GraphSurgeries",
+            "surgeries": [
+                { "surgeon": "RemoveRopeMultiCache" },
+                { "surgeon": "AttentionMaskToSequenceLengths" },
+                { "surgeon": "SimplifiedLayerNormToL2Norm" }
+            ],
+            "save_as_external_data": true
+        }
+    },
+    "log_severity_level" : 1,
+    "output_dir" : "0testing_saves/onnx"
+}
