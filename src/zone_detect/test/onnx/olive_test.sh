@@ -12,4 +12,4 @@ olive auto-opt \
 
 
 # actually more like
-olive run --config /home/ign.fr/SHys/FLAIR-1/src/zone_detect/test/onnx/olive_config_onnx.json
+olive run --config /home/ign.fr/SHys/FLAIR-1/src/zone_detect/test/onnx/olive_config_pt.json

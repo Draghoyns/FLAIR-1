@@ -12,7 +12,7 @@ from pruna import SmashConfig, smash
 import segmentation_models_pytorch as smp
 from transformers import AutoModelForSemanticSegmentation, AutoConfig
 
-from src.flair.utils import read_config
+from src.zone_detect.utils import read_config
 
 
 @dataclass

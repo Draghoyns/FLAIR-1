@@ -4,10 +4,12 @@
         "model_path": "/media/DATA/INFERENCE_HS/MODELS_IA/FLAIR1/swin-upernet-small_IRV_SET1/checkpoints/openmmlab/upernet-swin-small_gpu_1x3x512x512.onnx"
     },
         "passes" : {
-        "OnnxDynamicQuantization": {
+        "ODQ": {
             "type": "OnnxDynamicQuantization",
-            "disable_search": false,
-            "precision": "int8"
+            "precision": "int8",
+            "op_types_to_exclude": [
+                "Conv"
+            ]
         },
         "gs": {
             "type": "GraphSurgeries",

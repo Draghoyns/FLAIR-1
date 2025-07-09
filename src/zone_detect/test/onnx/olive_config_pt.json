@@ -1,23 +1,26 @@
 {
     "input_model": {
         "type": "PytorchModel",
-        "model_path": "src/zone_detect/metrics/frozen_config.yaml", 
-        "model_script": "src/zone_detect/model.py",
-        "model_loader": "load_model_from_cfg_path"
+        "model_path": "src/zone_detect/metrics/frozen_config.yaml",
+        "model_script": "src/zone_detect/test/onnx/script_olive.py",
+        "model_loader": "load_model_from_cfg_path",
+        "dummy_inputs_func": "dummy"
     },
         "passes" : {
-        "mb": {
-            "type": "",
-            "precision": "",
-            "int4_block_size": 32,
-            "int4_accuracy_level": 4,
-            "int4_op_types_to_quantize": [ "MatMul", "Gather" ],
-            "save_as_external_data": true
+            "OnnxConv": {
+            "type": "OnnxConversion",
+            "device": "cuda"},
+        "ODQ": {
+            "type": "OnnxDynamicQuantization",
+            "precision": "int8",
+            "op_types_to_exclude": [
+                "Conv"
+            ]
         },
         "gs": {
             "type": "GraphSurgeries",
             "surgeries": [
-                { "surgeon": "RemoveRopeMultiCache" },
+                { "surgeon": "InferSHapes" },
                 { "surgeon": "AttentionMaskToSequenceLengths" },
                 { "surgeon": "SimplifiedLayerNormToL2Norm" }
             ],
@@ -25,5 +28,5 @@
         }
     },
     "log_severity_level" : 1,
-    "output_dir" : "0testing_saves/onnx"
+    "output_dir" : "0testing_saves/onnx/noconv_from_pt"
 }

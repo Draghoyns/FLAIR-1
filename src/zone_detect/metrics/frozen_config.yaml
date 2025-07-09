@@ -12,9 +12,9 @@ img_pixels_detection: 512 # best for swin
 margin: 0.125 # for clipping, in pixels
 
 #### MODEL
-model_weights: ""
+model_weights: /media/DATA/INFERENCE_HS/MODELS_IA/FLAIR1/swin-upernet-small_IRV_SET1/checkpoints/ckpt-epoch=84-val_loss=0.37_00_HF_SwinUpernet_Small_IR-R-G_set1.ckpt
 model_framework: 
-    model_provider: SegmentationModelsPytorch
+    model_provider: HuggingFace
     
     HuggingFace:
         org_model: openmmlab/upernet-swin-small
