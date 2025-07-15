@@ -1,5 +1,7 @@
-import datetime
+from datetime import datetime
+
 import os
+import sys
 import yaml
 
 from pathlib import Path
@@ -10,13 +12,108 @@ import numpy as np
 import rasterio
 
 import torch
+from pytorch_lightning.utilities.rank_zero import rank_zero_only  # type: ignore
 
 from src.zone_detect.test.tiles import get_stride
 
 Config = dict[str, Any]  # type alias for configuration dictionary
 
 
+#### LOGGING ####
+
+
+# TODO: modify log to handle multiple inputs
+def conf_log(
+    config: Config,
+    resolution: tuple[float, float],
+    img_size: tuple[int, int],
+) -> None:
+    # Determine model template info based on provider
+    mf = config["model_framework"]
+    provider = mf["model_provider"]
+    if provider == "HuggingFace":
+        model_template = f"{provider} - {mf['HuggingFace']['org_model']}"
+    elif provider == "SegmentationModelsPytorch":
+        model_template = (
+            f"{provider} - {mf['SegmentationModelsPytorch']['encoder_decoder']}"
+        )
+    else:
+        model_template = provider  # fallback if unknown
+
+    compare_handling = "strategies" in config
+    compare = config["compare"]
+    strategies = config["strategies"]
+
+    if compare:
+        compare_param = f"""
+    |- overlapping strategy: {"handled" if compare_handling  else "exact"}
+    |- tiling comparison: {"yes" if (compare_handling and strategies['tiling']['enabled']) else "no"}
+    |- stitching comparison: {"no" if not compare_handling else strategies['stitching']['method']}
+    |- padding: {"not handled" if not compare_handling else strategies['padding_overall']} \n """
+    else:
+        compare_param = ""
+
+    print("    [ ] no comparison" if not compare else "    [x] comparison")
+    log = [
+        f"""
+    |- output path: {config['output_path']}
+    |- output raster name: {config['output_name']}
+
+    |- input image path: {config['input_img_path']}
+    |- channels: {config['channels']}
+    |- input image WxH: {img_size}   
+    |- resolution: {resolution}
+    |- write dataframe: {config.get('write_dataframe', False)}
+    |- number of classes: {config['n_classes']}
+    |- normalization: {config['norma_task'][0]['norm_type']}
+    |- output type: {config['output_type']}
+
+    |- model weights path: {config['model_weights']}
+    |- model template: {model_template}
+    |- device: {"cuda" if config['use_gpu'] else "cpu"}
+    |- batch size: {config['batch_size']}
+    """
+    ]
+    print("\n".join(log + [compare_param]))
+
+
+@rank_zero_only
+class Logger(object):
+    def __init__(self, filename="Default.log"):
+        self.terminal = sys.stdout
+        self.log = open(filename, "w", encoding="utf-8")
+        self.encoding = self.terminal.encoding
+
+    def write(self, message):
+        self.terminal.write(message)
+        self.log.write(message)
+
+    def flush(self):
+        self.log.flush()
+
+
+def initial_log() -> None:
+    """Initial log to print system info and run ID."""
+
+    ## Run ID
+    run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+    print(f"Run ID: {run_id}")
+
+    ## System Info
+    print("\n--- System Info ---")
+    print(
+        f"GPU          : {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU'}"
+    )
+    print(f"Python       : {sys.version}")
+    print(f"CUDA         : {torch.version.cuda}")  # type: ignore
+    print(f"cuDNN        : {torch.backends.cudnn.version()}")
+    print(f"PyTorch      : {torch.__version__}")
+    print(f"ONNX         : {onnx.__version__}")  # type: ignore
+
+
 #### CONFIG ####
+
+
 def read_config(arguments: dict) -> Config:
     file_path = arguments.get("conf", "config.yaml")
     with open(file_path, "r") as f:
@@ -285,7 +382,7 @@ def setup_out_path(config: Config) -> Config:
 
     if config.get("compare", False):
         # create a directory with a unique id
-        current_time = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
         child_dir = child_dir / Path(current_time)
         os.makedirs(child_dir, exist_ok=True)
         print(f"Creating output directory: {child_dir}")

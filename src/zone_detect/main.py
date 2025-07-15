@@ -10,8 +10,6 @@ from typing import Any
 
 from geopandas import GeoDataFrame
 
-from pytorch_lightning.utilities.rank_zero import rank_zero_only  # type: ignore
-
 import rasterio
 
 import onnxruntime as ort
@@ -34,12 +32,14 @@ from src.zone_detect.test.onnx.onnx_export import get_onnx_path
 
 from src.zone_detect.utils import (
     batchmode_path_setup,
+    conf_log,
     gen_param_combination,
     open_images,
     setup_device,
     setup_out_path,
     setup,
     setup_indiv_path,
+    Logger,
 )
 
 Config = dict[str, Any]
@@ -59,77 +59,6 @@ argParser.add_argument("-m", "--metrics", action="store_true", help="compute met
 argParser.add_argument(
     "-b", "--batch_mode", action="store_true", help="run on a batch of input images"
 )
-
-
-# __________Logging___________#
-@rank_zero_only
-class Logger(object):
-    def __init__(self, filename="Default.log"):
-        self.terminal = sys.stdout
-        self.log = open(filename, "w", encoding="utf-8")
-        self.encoding = self.terminal.encoding
-
-    def write(self, message):
-        self.terminal.write(message)
-        self.log.write(message)
-
-    def flush(self):
-        self.log.flush()
-
-
-# TODO: modify log to handle multiple inputs
-def conf_log(
-    config: Config,
-    resolution: tuple[float, float],
-    img_size: tuple[int, int],
-) -> None:
-    # Determine model template info based on provider
-    mf = config["model_framework"]
-    provider = mf["model_provider"]
-    if provider == "HuggingFace":
-        model_template = f"{provider} - {mf['HuggingFace']['org_model']}"
-    elif provider == "SegmentationModelsPytorch":
-        model_template = (
-            f"{provider} - {mf['SegmentationModelsPytorch']['encoder_decoder']}"
-        )
-    else:
-        model_template = provider  # fallback if unknown
-
-    compare_handling = "strategies" in config
-    compare = config["compare"]
-    strategies = config["strategies"]
-
-    if compare:
-        compare_param = f"""
-    |- overlapping strategy: {"handled" if compare_handling  else "exact"}
-    |- tiling comparison: {"yes" if (compare_handling and strategies['tiling']['enabled']) else "no"}
-    |- stitching comparison: {"no" if not compare_handling else strategies['stitching']['method']}
-    |- padding: {"not handled" if not compare_handling else strategies['padding_overall']} \n """
-    else:
-        compare_param = ""
-
-    print("    [ ] no comparison" if not compare else "    [x] comparison")
-    log = [
-        f"""
-    |- output path: {config['output_path']}
-    |- output raster name: {config['output_name']}
-
-    |- input image path: {config['input_img_path']}
-    |- channels: {config['channels']}
-    |- input image WxH: {img_size}   
-    |- resolution: {resolution}
-    |- write dataframe: {config.get('write_dataframe', False)}
-    |- number of classes: {config['n_classes']}
-    |- normalization: {config['norma_task'][0]['norm_type']}
-    |- output type: {config['output_type']}
-
-    |- model weights path: {config['model_weights']}
-    |- model template: {model_template}
-    |- device: {"cuda" if config['use_gpu'] else "cpu"}
-    |- batch size: {config['batch_size']}
-    """
-    ]
-    print("\n".join(log + [compare_param]))
 
 
 # __________Prepare objects___________#
@@ -194,13 +123,16 @@ def prepare_data(
 
 def prepare_model(config: Config, device: torch.device) -> Config:
     # load one model, once only
-    print(
-        f"""
+    verbose = config.get("log_verbose", False)
+
+    if verbose:
+        print(
+            f"""
     ##############################################
     ZONE DETECTION
     ##############################################
     """
-    )
+        )
 
     onnx = config.get("onnx", False)
     arg_package = dict()
@@ -208,7 +140,8 @@ def prepare_model(config: Config, device: torch.device) -> Config:
     if onnx:
         device_key = "gpu" if config["use_gpu"] else "cpu"
         model_type = "onnx"
-        print(f"""    [ ] using ONNX model...""")
+        if verbose:
+            print(f"""    [ ] using ONNX model...""")
 
         providers = {"gpu": "CUDAExecutionProvider", "cpu": "CPUExecutionProvider"}
 
@@ -224,26 +157,27 @@ def prepare_model(config: Config, device: torch.device) -> Config:
 
     else:
         model_type = "pytorch"
-        print(
-            f"""    [ ] using PyTorch model...
+        if verbose:
+            print(
+                f"""    [ ] using PyTorch model...
 
         CUDA available? {torch.cuda.is_available()}
         """
-        )
+            )
 
         ## loading model and weights
         model = load_model(config)
-
-        sparsity({"config": config})
 
         if config.get("pruna", False):
 
             model = opti_pruna(model, config.get("sparse", 0.005))
 
-            sparsity({"model": model})
+            if verbose:
+                sparsity({"model": model})
 
         model = model.eval().to(device)
-        print(f"""    [x] loaded model and weights...""")
+        if verbose:
+            print(f"""    [x] loaded model and weights...""")
 
         arg_package.update(
             {"model": model, "device": device, "use_gpu": config["use_gpu"]}
