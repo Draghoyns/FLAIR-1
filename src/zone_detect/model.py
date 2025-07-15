@@ -15,6 +15,8 @@ from transformers import AutoModelForSemanticSegmentation, AutoConfig
 
 from src.zone_detect.utils import read_config
 
+from src.zone_detect.utils import read_config
+
 
 @dataclass
 class FLAIR_ModelFactory:
@@ -102,12 +104,13 @@ def load_model(config: dict) -> nn.Module:
 
 def load_model_from_cfg_path(cfg_path: str) -> nn.Module:
     """
-    Load a model from a given path.
+    Load a model from a given file.
     Args:
         cfg_path (str): Path to the configuration file.
     Returns:
         nn.Module: The loaded model.
     """
+
     if not os.path.exists(cfg_path):
         raise FileNotFoundError(f"Config file {cfg_path} does not exist.")
     config = read_config({"conf": cfg_path})

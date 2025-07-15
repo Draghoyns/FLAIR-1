@@ -1,0 +1,26 @@
+{
+    "input_model": {
+        "type": "ONNXModel",
+        "model_path": "/media/DATA/INFERENCE_HS/MODELS_IA/FLAIR1/swin-upernet-small_IRV_SET1/checkpoints/openmmlab/upernet-swin-small_gpu_1x3x512x512.onnx"
+    },
+        "passes" : {
+        "ODQ": {
+            "type": "OnnxDynamicQuantization",
+            "precision": "int8",
+            "op_types_to_exclude": [
+                "Conv"
+            ]
+        },
+        "gs": {
+            "type": "GraphSurgeries",
+            "surgeries": [
+                { "surgeon": "InferSHapes" },
+                { "surgeon": "AttentionMaskToSequenceLengths" },
+                { "surgeon": "SimplifiedLayerNormToL2Norm" }
+            ],
+            "save_as_external_data": true
+        }
+    },
+    "log_severity_level" : 1,
+    "output_dir" : "0testing_saves/onnx/conv"
+}
