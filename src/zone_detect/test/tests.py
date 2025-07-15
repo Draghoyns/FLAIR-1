@@ -1,7 +1,6 @@
 # testing all sorts of functions for my own sanity
 
 import json
-import os
 from tqdm import tqdm
 
 from pathlib import Path
@@ -13,7 +12,7 @@ from sklearn.metrics import confusion_matrix
 
 import rasterio
 
-from src.zone_detect.test.metrics import *
+from src.zone_detect.metrics.metrics import *
 from src.zone_detect.test.tiles import get_stride
 from src.zone_detect.utils import extract_method, info_extract
 
@@ -290,120 +289,7 @@ def test_batch_metrics_pipeline(config: dict, truth_dpt: Path) -> None:
     print(f"Metrics saved to {out}")
 
 
-# last checked and updated : 20250519 1205
-def test_batch_metrics(config: dict, truth_dir: Path) -> list:
-    print(
-        """Testing batch metrics...
-    ______________________________"""
-    )
-    metrics_file = []
-
-    df = collect_paths_truth(config, truth_dir)
-    classes = config["classes"]
-    n_classes = len(classes)
-    print(f"Classes are: {classes}")
-
-    print(f"Dataframe looks like: {df.head(5)}")
-    print(f"Dataframe methods are: {df['method'].unique()}")
-
-    grouped = df.groupby("method")
-
-    # metrics for each method
-    print("Computing metrics...")
-    for method, group in grouped:
-
-        pred_paths = group["pred_path"].tolist()
-        gt_paths = group["truth_path"].tolist()
-
-        patch_confusion_matrices = []
-        sum_confmat = np.zeros((n_classes, n_classes))
-        print(f"Processing method: {method}")
-
-        for pred_path, truth_path in tqdm(
-            zip(pred_paths, gt_paths), desc="Processing images"
-        ):
-            try:
-                # loading
-                with rasterio.open(pred_path) as src:
-                    preds = src.read(1)
-                with rasterio.open(truth_path) as src:
-                    target = src.read(1) - 1
-
-                # patch_confusion_matrices.append( confusion_matrix( target.flatten(), preds.flatten(), labels=list(range(int(len(config["classes"])))) + [255],))
-                sum_confmat += confusion_matrix(
-                    target.flatten(), preds.flatten(), labels=list(range(n_classes))
-                )
-
-            except Exception as e:
-                print(f"Error processing {pred_path} and {truth_path}: {e}")
-
-        # compute metrics for the group
-        # sum_confmat = np.sum(patch_confusion_matrices, axis=0)
-        confmat_cleaned = clean_confmat(sum_confmat, config)
-
-        # metrics
-        with np.errstate(divide="ignore", invalid="ignore"):
-            # nans are handled dont worry
-            per_c_ious, avg_ious = class_IoU(confmat_cleaned)
-            ovr_acc = overall_accuracy(confmat_cleaned)
-            per_c_fscore, avg_fscore = class_fscore(confmat_cleaned)
-            method_times = config.get("times", {}).get(method, [])
-            avg_time = np.mean(method_times) if method_times else 0
-
-        print("Storing metrics...")
-
-        # method parameters
-        # mock_path = Path("/region/" + str(method) + ".tif")
-        # info = info_extract(mock_path)
-        info = extract_method(str(method))
-
-        patch_size = info["patch_size"]
-        stride = info["stride"]
-        margin = info["margin"]
-        padding = info["padding"]
-        stitching = info["stitching"]
-
-        metrics = {
-            "Method parameters": [
-                "model name",
-                "patch size",
-                "stride",
-                "margin",
-                "padding",
-                "stitching method",
-            ],
-            "Parameters values": [
-                config["model_name"],
-                patch_size,
-                stride,
-                margin,
-                padding,
-                stitching,
-            ],
-            "Avg_metrics_name": ["mIoU", "Overall Accuracy", "Fscore", "Time"],
-            "Avg_metrics": [
-                avg_ious,
-                ovr_acc,
-                avg_fscore,
-                avg_time,
-            ],
-            "classes": [classes[i][1] for i in range(1, n_classes + 1)],
-            "per_class_iou": list(per_c_ious),
-            "per_class_fscore": list(per_c_fscore),
-        }
-        metrics_file.append(metrics)
-
-    print(
-        f"""Stats: 
-    ______________________________
-    Length : {len(metrics_file)}
-    Sample : {metrics_file[:2]}
-    """
-    )
-
-    return metrics_file
-
-
+#
 # last checked and updated : 20250519 1144
 def test_collect_paths_truth(config: dict, truth_dir: Path) -> pd.DataFrame:
     path_collection = []
@@ -440,80 +326,6 @@ def test_collect_paths_truth(config: dict, truth_dir: Path) -> pd.DataFrame:
                 }
             )
     return pd.DataFrame(path_collection)
-
-
-def test_compute_metrics_patch(
-    pred_patch: np.ndarray,
-    truth: np.ndarray,
-    window: Window,
-    config: dict,
-    method: str,
-) -> dict:
-    """
-    Patch metrics can be computed before the stitching ,
-    or once the whole image is built.
-    Average etrics are not exactly relevant because of the classes absent from a patch.
-    Args:
-        pred_patch (np.ndarray): Predicted patch.
-        window (Window): Window object for the patch.
-        config (dict): Configuration, in which the parameters for the inference are specified
-        out_json (Path): Path to the output JSON file for metrics. If the file exists, it will be overwritten.
-            You better put in the name if it's raw (before stitching) or after.
-    """
-
-    # raise error if invalid truth
-    valid_truth(config)
-
-    target = truth[
-        window.row_off : window.row_off + window.height,
-        window.col_off : window.col_off + window.width,
-    ]
-    print(f"Target shape: {target.shape}")
-    print(f"Target looks like: \n {target[:6, :6]}")
-    print(f"Pred shape: {pred_patch.shape}")
-    print(f"Pred[0] looks like: \n {pred_patch[0][:6, :6]}")
-
-    assert (
-        pred_patch.shape == target.shape
-    ), "Shapes of ground truth and prediction must match"
-
-    classes = config["classes"]
-    n_classes = len(classes)
-
-    #### compute metrics
-    # confusion matrix
-    confmat = confusion_matrix(
-        target.flatten(), pred_patch.flatten(), labels=list(range(n_classes))
-    )
-
-    confmat_cleaned = clean_confmat(confmat, config)
-
-    with np.errstate(divide="ignore", invalid="ignore"):
-        # nans are handled don't worry
-        per_c_ious, avg_ious = class_IoU(confmat_cleaned)
-        ovr_acc = overall_accuracy(confmat_cleaned)
-        per_c_fscore, avg_fscore = class_fscore(confmat_cleaned)
-
-    # save metrics to a json file : raw or post-stitching
-    key = f"{method}_{window.col_off}_{window.row_off}"
-    metrics = {
-        key: {
-            "Avg_metrics_name": [
-                "mIoU",
-                "Overall Accuracy",
-                "Fscore",
-            ],
-            "Avg_metrics": [
-                avg_ious,
-                ovr_acc,
-                avg_fscore,
-            ],
-            "classes": [classes[i][1] for i in range(1, n_classes + 1)],
-            "per_class_iou": list(per_c_ious),
-            "per_class_fscore": list(per_c_fscore),
-        }
-    }
-    return metrics
 
 
 # last checked and updated : 20250522 1028
