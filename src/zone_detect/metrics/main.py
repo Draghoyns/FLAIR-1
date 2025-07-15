@@ -75,14 +75,19 @@ def set_config(args, arguments: dict[str, str]) -> Config:
     config["model_weights"] = args.ckpt
 
     # set model
+    # config.update({"sparse": SPARSE})
     config = prepare_model(config, device)
 
     # set output paths
+    someparam = "_" + str(config.get("sparse", 0.0))
+    if someparam == 0:
+        someparam = ""
+
     model_nickname = config["model_name"].split("-")[-1]
     model_type = config.get("model_type", "type-unknown")
     device_type = "gpu" if use_gpu else "cpu"
-    date = datetime.datetime.now().strftime("%Y%m%d")
-    new_folder = f"{date}_{model_nickname}_{model_type}_{device_type}"
+    date = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+    new_folder = f"{date}_{model_nickname}_{model_type}_{device_type}{someparam}"
 
     config.update(
         {
@@ -385,12 +390,28 @@ def batch_pipeline(config: Config) -> None:
     print(f"Metrics saved to {out}")
 
 
-def main():
+def main(SPARSE=None):
 
     # get data paths and model ckpt
     args = argParser.parse_args()
+
+    # get data type
+    ckpt: str = args.ckpt.lower()
+
+    if "irc" in ckpt and "rvb" not in ckpt and "rvb" not in ckpt:
+        data_type = "IRC"
+    elif "rvb" in ckpt or "rgb" in ckpt:
+        data_type = "RVB"
+    else:
+        print(
+            "WARNING: No data type found in the checkpoint name, defaulting to IRC. "
+            "Please ensure the checkpoint name contains 'IRC' or 'RVB'."
+        )
+        data_type = "IRC"
+
     arguments = {
-        "conf": "/home/ign.fr/SHys/FLAIR-1/src/zone_detect/metrics/frozen_config.yaml"
+        "conf": f"src/zone_detect/metrics/configs/frozen_config_{data_type}.yaml",
+        "sparse": SPARSE,
     }
 
     # Set up the config
@@ -401,15 +422,17 @@ def main():
 
 if __name__ == "__main__":
 
+    """sparse_list = [i * 1e-3 for i in range(1, 16)]  # from 0.001 to 0.014
+    for SPARSE in sparse_list:
+        print(f"Running with SPARSE = {SPARSE}")
+        main(SPARSE)
+    """
     main()
-
 
 # command to run the script:
 
 #### SWIN
-# python src/zone_detect/metrics/main.py --data=/home/ign.fr/SHys/FLAIR-1/0testing_saves/data_paths.csv --ckpt=/media/DATA/INFERENCE_HS/MODELS_IA/FLAIR1/swin-upernet-small_IRV_SET1/checkpoints/ckpt-epoch=84-val_loss=0.37_00_HF_SwinUpernet_Small_IR-R-G_set1.ckpt
+# python src/zone_detect/metrics/main.py --data=0testing_saves/data_paths_IRC.csv --ckpt=/media/DATA/INFERENCE_HS/MODELS_IA/FLAIR1/swin-upernet-small_IRV_SET1/checkpoints/ckpt-epoch=84-val_loss=0.37_00_HF_SwinUpernet_Small_IR-R-G_set1.ckpt
 
 #### UNET
-# python src/zone_detect/metrics/main.py --data=/home/ign.fr/SHys/FLAIR-1/0testing_saves/data_paths.csv --ckpt=/media/DATA/INFERENCE_HS/MODELS_IA/FLAIR1/unet_resnet/FLAIR-INC_rgb_15cl_resnet34-unet_weights.pth
-
-# python src/zone_detect/metrics/main.py --data=/home/ign.fr/SHys/FLAIR-1/0testing_saves/data_paths.csv --ckpt=/home/ign.fr/SHys/FLAIR-1/0testing_saves/20250703_pruna-torch_dynamic_resnet/resnet_torch-dynamic_converted_model.ckpt
+# python src/zone_detect/metrics/main.py --data=0testing_saves/data_paths_RVB.csv --ckpt=/media/DATA/INFERENCE_HS/MODELS_IA/FLAIR1/unet_resnet/FLAIR-INC_rgb_15cl_resnet34-unet_weights.pth

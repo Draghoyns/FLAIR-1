@@ -18,7 +18,11 @@ from rasterio.windows import Window
 
 from sklearn.metrics import confusion_matrix
 
-from src.zone_detect.model import load_model
+from src.zone_detect.model import (
+    analyze_model_weights,
+    load_model,
+    load_model_from_cfg_path,
+)
 from src.zone_detect.slicing_job import slice_pixels, nb_patches
 from src.zone_detect.utils import extract_method, info_extract
 
@@ -194,7 +198,6 @@ def compute_metrics_patch(
 
     #### compute metrics
     # confusion matrix
-    # confmat = faster_confusion_matrix(target.flatten(), pred_patch.flatten(), n_classes)
     confmat = confusion_matrix(
         target.flatten(), pred_patch.flatten(), labels=range(n_classes)
     )
@@ -587,6 +590,35 @@ def error_rate_patch(
     return dic
 
 
+def sparsity(model_arg: dict, save: str = "") -> None:
+    """Compute the sparsity of the model from the configuration file.
+    Args:
+        model_arg (dict): Dictionary containing the model configuration, which can include either a path to a configuration file ("config") or the model itself ("model").
+    """
+
+    cfg = model_arg.get("config", None)
+    model = model_arg.get("model", None)
+
+    if cfg is None and model is None:
+        raise ValueError("Please provide a configuration path or a model.")
+
+    if model is None:
+        if type(cfg) is str:
+            model = load_model_from_cfg_path(cfg)
+        elif type(cfg) is dict:
+            model = load_model(cfg)
+        else:
+            raise ValueError("cfg_path should be a string or a dictionary.")
+
+    report = analyze_model_weights(model, save=bool(save))
+    report_df = pd.DataFrame(report)
+
+    if save:
+        out_path = save if save.endswith(".csv") else save + ".csv"
+        report_df.to_csv(out_path, index=False)
+        print(f"Model weight report saved to {out_path}")
+
+
 #### ANALYSIS ####
 def load_metrics_json(json_path: Path) -> list[dict]:
     with open(json_path, "r") as f:
@@ -754,7 +786,7 @@ if __name__ == "__main__":
 
     # error_rate_loop(Path(truth_dir), Path(out_dir), Path(pred_dir))
 
-    metrics_path = "/media/DATA/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out20250703/20250703_small_pytorch_gpu_default-resnet/metrics.json"
+    metrics_path = "/media/DATA/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out20250710/20250710_small_pytorch_gpu_pruna-pruned-l1/metrics.json"
 
     # analyze_metrics((Path(metrics_path)))
 
@@ -767,6 +799,3 @@ if __name__ == "__main__":
         "/home/ign.fr/SHys/FLAIR-1/0testing_saves/20250703_pruna-torch_dynamic_resnet/resnet_torch-dynamic_converted_model.ckpt",
         "/media/DATA/INFERENCE_HS/MODELS_IA/FLAIR1/unet_resnet/FLAIR-INC_rgb_15cl_resnet34-unet_weights.pth",
     ]
-
-    # for _ in range(10):
-    # model_ram_compare(ckpt_list)

@@ -25,7 +25,11 @@ from src.zone_detect.model import load_model, opti_pruna
 from src.zone_detect.slicing_job import slice_extent, slice_extent_separate
 from src.zone_detect.stitching_job import stitching
 
-from src.zone_detect.metrics.metrics import batch_metrics, compute_metrics_patch
+from src.zone_detect.metrics.metrics import (
+    batch_metrics,
+    compute_metrics_patch,
+    sparsity,
+)
 from src.zone_detect.test.onnx.onnx_export import get_onnx_path
 
 from src.zone_detect.utils import (
@@ -230,8 +234,13 @@ def prepare_model(config: Config, device: torch.device) -> Config:
         ## loading model and weights
         model = load_model(config)
 
+        sparsity({"config": config})
+
         if config.get("pruna", False):
-            model = opti_pruna(model)
+
+            model = opti_pruna(model, config.get("sparse", 0.005))
+
+            sparsity({"model": model})
 
         model = model.eval().to(device)
         print(f"""    [x] loaded model and weights...""")
