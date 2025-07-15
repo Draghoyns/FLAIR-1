@@ -1,0 +1,34 @@
+pytorch_baseline :
+  enable : true
+  precision : fp32
+
+onnx_baseline :
+  enable : true
+  precision : fp32
+  flag : onnx
+
+pruned : 
+  enable : true
+  sparse : 0.05
+  precision : fp32
+  flag : pruna
+
+pruna_half :
+  enable : true
+  precision : fp16
+  flag : pruna
+
+pruna_half_pruned :
+  enable : true
+  sparse : 0.05
+  precision : fp16
+  flag : pruna
+
+pytorch_bf16 : 
+  enable : true
+  precision : bf16
+
+ao_weights-only_int8 :
+  enable : true
+  precision : int8
+  flag : torchao

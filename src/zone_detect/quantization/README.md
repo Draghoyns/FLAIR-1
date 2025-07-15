@@ -1,10 +1,13 @@
+# Elements to put in readme
+- config files are fetched from configs -> can be changed in the code, but recommend modifying the config files directly
+- run main.py from the root of the folder, which is `FLAIR-1`
 
 # TODO
 ## Cahier des charges quantization pipeline
 
 - non bloquant (si une méthode marche pas, on passe à la suivante, keep error log)
 - métriques : csv with method, precision, total latency, (number of patches?), memory used, carbon,success flag
-- des logs simples (saved with id = datetime up to second, 1 log / method)
+- des logs simples (saved with output id = datetime up to second, 1 log / method)
 	-> `method_date_time.log`
 	- at the very beginning : GPU name, cuda, torch, onnx versions
 	- tqdm sur les images traitées du dataset, pas les patches
@@ -36,7 +39,6 @@
 	pruna_half_pruned :
 	pytorch_bf16 : 
 	ao_weights-only_int8 :
-		
 - prepare_model for every type of model (possibly adapt inference accordingly)
 - save yaml config snapshot for reproducibility
 - clean logger
