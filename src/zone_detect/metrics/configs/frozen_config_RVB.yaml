@@ -1,15 +1,15 @@
 #### OUTPUT
-output_path: /media/DATA/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out20250703 #.
+output_path: /media/DATA/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out20250710 #.
 output_name: D037_2021_UU_S1_4_IRC-ARGMAX-S # stem
 output_type: argmax # prediction type
 
 #### INPUT AND GROUND TRUTH
-data_type: IRC # IR, IRC, RVB, RVBI, RVBIE
+data_type: RVB # IR, IRC, RVB, RVBI, RVBIE
 
 #### PARAMETERS
 channels: [1, 2, 3, ] 
 img_pixels_detection: 512 # best for swin
-margin: 0.125 # for clipping, in pixels
+margin: 0 # for clipping, in pixels
 
 #### MODEL
 model_framework: 
@@ -20,8 +20,8 @@ model_framework:
     SegmentationModelsPytorch:
         encoder_decoder: resnet34_unet
 
-model_name: upernet-swin-small
-encoder_name: swin-small
+model_name: resnet34_unet
+encoder_name: resnet34
 
 batch_size:  2 # for DataLoader
 use_gpu: true 
@@ -29,7 +29,7 @@ num_worker: 8
 
 
 #### OPTIMIZATION SWITCHES
-pruna : false
+pruna : true
 onnx: false # if true, use onnx model, else use pytorch model
 log_verbose: false
 save_logs: false # if true, save logs in output_path
@@ -37,8 +37,8 @@ save_logs: false # if true, save logs in output_path
 #### NORMALIZATION
 norma_task:
 - norm_type: custom
-  norm_means: [106.38, 105.08, 110.87]
-  norm_stds: [39.69, 52.17, 45.38]
+  norm_means: [105.08, 110.87, 101.82]
+  norm_stds: [52.17, 45.38,44]
 
 #### COMPARISON PARAMETERS
   # only if --compare when calling flair-detect

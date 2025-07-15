@@ -1,0 +1,83 @@
+#### OUTPUT
+output_path: /media/DATA/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out20250711 #.
+output_name: D037_2021_UU_S1_4_IRC-ARGMAX-S # stem
+output_type: argmax # prediction type
+
+#### INPUT AND GROUND TRUTH
+data_type: IRC # IR, IRC, RVB, RVBI, RVBIE
+
+#### PARAMETERS
+channels: [1, 2, 3, ] 
+img_pixels_detection: 512 # best for swin
+margin: 0.125 # for clipping, in pixels
+
+#### MODEL
+model_framework: 
+    model_provider: HuggingFace
+    
+    HuggingFace:
+        org_model: openmmlab/upernet-swin-small
+    SegmentationModelsPytorch:
+        encoder_decoder: resnet34_unet
+
+model_name: upernet-swin-small
+encoder_name: swin-small
+
+batch_size:  2 # for DataLoader
+use_gpu: true 
+num_worker: 8
+
+
+#### OPTIMIZATION SWITCHES
+pruna : true
+onnx: false # if true, use onnx model, else use pytorch model
+log_verbose: false
+save_logs: false # if true, save logs in output_path
+
+#### NORMALIZATION
+norma_task:
+- norm_type: custom
+  norm_means: [106.38, 105.08, 110.87]
+  norm_stds: [39.69, 52.17, 45.38]
+
+#### COMPARISON PARAMETERS
+  # only if --compare when calling flair-detect
+
+# used to ensure coherence between tiling and stitching parameters
+overlap_strat : False # False for exact clipping, True if overlap is handled
+
+strategies:
+  tiling: # tiling handles different sizes 
+    enabled: True
+    size_range : [512] # replaces img_pixels_detection
+    stride_range : [0.75] # percentage of the tile size - should be related to margin if stitching requires clipping
+    #shapes : [] # square by default
+
+  stitching : # overlap is determined by tiling
+    enabled : True
+    method: exact-clipping
+    methods : [exact-clipping] #[average, average_weights, max, exact-clipping] # max = max confidence
+    margin : [0., 0.125] # percentage of the tile size (float) TODO: add option to use pixels
+
+#### CLASSES
+n_classes: 19
+classes: # k = value in MSK : v = [weight, name]
+    1:  [1, 'building']
+    2:  [1, 'pervious surface']
+    3:  [1, 'impervious surface']
+    4:  [1, 'bare soil']
+    5:  [1, 'water']
+    6:  [1, 'coniferous']
+    7:  [1, 'deciduous']
+    8:  [1, 'brushwood']
+    9:  [1, 'vineyard']
+    10: [1, 'herbaceous vegetation']
+    11: [1, 'agricultural land']
+    12: [1, 'plowed land']
+    13: [1, 'swimming_pool']
+    14: [1, 'snow']
+    15: [0, 'clear cut']
+    16: [0, 'mixed']
+    17: [0, 'ligneous']
+    18: [1, 'greenhouse']
+    19: [0, 'other']
