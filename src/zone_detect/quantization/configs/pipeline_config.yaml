@@ -1,0 +1,60 @@
+#________________ OUTPUT ________________#
+output_path: src/zone_detect/quantization/outputs/
+output_type: argmax # prediction type (only argmax supported)
+
+#________________ INPUTS ________________#
+data_type: IRC # IR, IRC, RVB, RVBI, RVBIE
+
+#______________ PARAMETERS ______________#
+channels: [1, 2, 3, ] # change along with data type
+img_pixels_detection: 512 # best for swin
+margin: 0 # for clipping, in pixels
+
+#_________________ MODEL _________________#
+model_weights: src/zone_detect/quantization/model/ckpt-epoch=84-val_loss=0.37_00_HF_SwinUpernet_Small_IR-R-G_set1.ckpt
+model_framework: 
+    model_provider: HuggingFace
+    HuggingFace:
+        org_model: openmmlab/upernet-swin-small
+    SegmentationModelsPytorch:  # for exhaustiveness, unused
+        encoder_decoder: resnet34_unet
+
+model_name: upernet-swin-small
+encoder_name: swin-small
+
+batch_size:  2 # for DataLoader
+use_gpu: true 
+num_worker: 8
+
+#______________ LOG SWITCHES ______________#
+log_verbose: false
+save_logs: false # if true, save logs in output_path
+
+#______________ NORMALIZATION ______________#
+norma_task:
+- norm_type: custom
+  norm_means: [106.38, 105.08, 110.87]
+  norm_stds: [39.69, 52.17, 45.38]
+
+#_________________ CLASSES _________________#
+n_classes: 19
+classes: # k = value in MSK : v = [weight, name]
+    1:  [1, 'building']
+    2:  [1, 'pervious surface']
+    3:  [1, 'impervious surface']
+    4:  [1, 'bare soil']
+    5:  [1, 'water']
+    6:  [1, 'coniferous']
+    7:  [1, 'deciduous']
+    8:  [1, 'brushwood']
+    9:  [1, 'vineyard']
+    10: [1, 'herbaceous vegetation']
+    11: [1, 'agricultural land']
+    12: [1, 'plowed land']
+    13: [1, 'swimming_pool']
+    14: [1, 'snow']
+    15: [0, 'clear cut']
+    16: [0, 'mixed']
+    17: [0, 'ligneous']
+    18: [1, 'greenhouse']
+    19: [0, 'other']

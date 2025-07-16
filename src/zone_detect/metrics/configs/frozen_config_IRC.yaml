@@ -1,18 +1,16 @@
 #### OUTPUT
 output_path: /media/DATA/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out20250711 #.
-output_name: D037_2021_UU_S1_4_IRC-ARGMAX-S # stem
 output_type: argmax # prediction type
 
-#### INPUT AND GROUND TRUTH
+#### INPUT
 data_type: IRC # IR, IRC, RVB, RVBI, RVBIE
 
 #### PARAMETERS
 channels: [1, 2, 3, ] 
 img_pixels_detection: 512 # best for swin
-margin: 0.125 # for clipping, in pixels
+margin: 0 # for clipping, in pixels
 
 #### MODEL
-model_weights: /media/DATA/INFERENCE_HS/MODELS_IA/FLAIR1/swin-upernet-small_IRV_SET1/checkpoints/ckpt-epoch=84-val_loss=0.37_00_HF_SwinUpernet_Small_IR-R-G_set1.ckpt
 model_framework: 
     model_provider: HuggingFace
     

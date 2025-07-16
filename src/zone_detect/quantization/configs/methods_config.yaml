@@ -9,24 +9,32 @@ onnx_baseline :
 
 pruned : 
   enable : true
-  sparse : 0.05
   precision : fp32
   flag : pruna
+  sparse : 0.005
+  methods:
+    pruner : torch_unstructured
 
 pruna_half :
   enable : true
   precision : fp16
   flag : pruna
+  methods:
+    quantizer : half
 
 pruna_half_pruned :
   enable : true
-  sparse : 0.05
   precision : fp16
   flag : pruna
+  sparse : 0.005
+  methods:
+    pruner : torch_unstructured
+    quantizer : half
 
 pytorch_bf16 : 
   enable : true
-  precision : bf16
+  precision : torch.bfloat16
+  flag: pytorch
 
 ao_weights-only_int8 :
   enable : true
