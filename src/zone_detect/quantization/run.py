@@ -1,8 +1,10 @@
 from copy import deepcopy
+import os
+import sys
 import yaml
 
 from src.zone_detect.main import prepare_model
-from src.zone_detect.utils import setup
+from src.zone_detect.utils import Logger, setup
 
 
 def get_configs():
@@ -19,7 +21,17 @@ def get_configs():
     return methods_config, pipeline_config, device
 
 
+def log_init(out: str):
+    """Initialize logging."""
+    out_path = "src/zone_detect/quantization/outputs"
+    os.makedirs(out_path, exist_ok=True)
+    sys.stdout = Logger(filename=f"{out_path}/{out}.log")
+    sys.stderr = sys.stdout
+    print(f"    [LOGGER] Writing logs to: {out_path}/{out}.log")
+
+
 def dry_run():
+    log_init("dry_run")
     print("No actions will be performed.")
 
     methods_config, pipeline_config, device = get_configs()
@@ -27,30 +39,39 @@ def dry_run():
     # print each method
     for method_name, method_params in methods_config.items():
         if method_params.get("enabled", True):
-            print(f"\nMethod: {method_name}")
-            for param, value in method_params.items():
-                if param != "enabled":
-                    print(f"  {param}: {value}")
 
-            # load model and print specs
             config = deepcopy(pipeline_config)
             flag = method_params.get("flag", "")
             config[flag] = True
-            if "pruned" in method_name:
-                config["sparse"] = method_params.get("sparse", 0.005)
+
+            config.update(
+                {
+                    f"{flag}_args": method_params,
+                }
+            )
+
+            # print parameters
+            print(f"\nMethod: {method_name}")
+            for param, value in method_params.items():
+                if param != "enable":
+                    print(f"  {param}: {value}")
+
+            # load model and print specs
             config = prepare_model(config, device)
 
-            # Print model details
-            print(f"\nModel type: {config.get('model_type', 'unknown')}")
+            # print model details
+            print(f"Model type: {config.get('model_type', 'unknown')}")
             model = config.get("model_args", {}).get("model", None)
             if model:
-                print(f"\nModel precision: {model.dtype}")
+                print(f"Model precision: {model.dtype}")
             else:
-                print(f"\nModel arguments: {config.get('model_args', {})}")
+                print(f"Model arguments: {config.get('model_args', {})}")
 
     print(f"\nOutputs are saved to: {pipeline_config.get('output_path', 'outputs/')}")
 
     print("\nDry run complete.")
+
+    sys.stdout = sys.__stdout__
 
 
 def run_pipeline():

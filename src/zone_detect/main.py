@@ -169,18 +169,32 @@ def prepare_model(config: Config, device: torch.device) -> Config:
         model = load_model(config)
 
         if config.get("pruna", False):
+            params = config.get("pruna_args", {})
 
-            model = opti_pruna(model, config.get("sparse", 0.005))
+            model = opti_pruna(model, params)
 
             if verbose:
                 sparsity({"model": model})
 
-        model = model.eval().to(device)
+        model = model.to(device)
+        pytorch_args = config.get("pytorch_args", {})
+        precision = pytorch_args.get("precision", "torch.float32")
+        dtype = getattr(torch, precision, None)
+
+        if dtype != torch.float32 and torch.cuda.is_available():
+            model = model.to(dtype)
+        model.eval()
+
         if verbose:
             print(f"""    [x] loaded model and weights...""")
 
         arg_package.update(
-            {"model": model, "device": device, "use_gpu": config["use_gpu"]}
+            {
+                "model": model,
+                "device": device,
+                "use_gpu": config["use_gpu"],
+                "dtype": dtype,
+            }
         )
 
     config.update({"model_type": model_type, "model_args": arg_package})
@@ -331,13 +345,12 @@ def run_pipeline(config: Config) -> None:
 
                 # stitching method is handled inside
                 prediction, window = stitching(
-                    config,
+                    combi,
                     sliced_dataframe,
                     prediction,
                     index,
                     out,
-                    stitch,
-                    stride,
+                    config["output_type"],
                 )
 
                 prediction_to_write = prediction.copy()
