@@ -9,6 +9,8 @@ from typing import Any
 
 import numpy as np
 
+import onnx
+
 import rasterio
 
 import torch
@@ -95,7 +97,6 @@ class Logger(object):
 def initial_log() -> None:
     """Initial log to print system info and run ID."""
 
-    ## Run ID
     run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
     print(f"Run ID: {run_id}")
 

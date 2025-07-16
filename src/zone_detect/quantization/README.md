@@ -1,6 +1,7 @@
 # Elements to put in readme
 - config files are fetched from configs -> can be changed in the code, but recommend modifying the config files directly
 - run main.py from the root of the folder, which is `FLAIR-1`
+- if you want to change the base model, put the weights in the `model` folder and update the model path in `pipeline_config;yaml` (the quantization methods may not work very well if you change though)
 
 # TODO
 ## Cahier des charges quantization pipeline

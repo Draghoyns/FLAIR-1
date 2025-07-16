@@ -26,8 +26,11 @@ def main():
         print("=== EXECUTING PIPELINE ===")
         run_pipeline()
 
-    # save log # TODO
-
 
 if __name__ == "__main__":
     main()
+
+
+# command
+# python src/zone_detect/quantization/main.py --dry-run
+# python src/zone_detect/quantization/main.py
