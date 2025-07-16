@@ -7,7 +7,7 @@ def get_stride(config: dict[str, Any]) -> list[int]:
     img_size = config["img_pixels_detection"]
 
     ## handle default = no overlap handling
-    if not config.get("overlap_strat"):
+    if not config.get("overlap_strat", False):
         stride = [int(img_size - 2 * config["margin"])]
     else:  # overlap is handled and parameterized
         stride = [

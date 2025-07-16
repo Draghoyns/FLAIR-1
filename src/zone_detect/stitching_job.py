@@ -44,19 +44,25 @@ def round_shape(window, op="ceil", pixel_precision=4) -> Window:
 
 
 def stitching(
-    config: dict[str, Any],
+    param_combi: dict[str, Any],
     sliced_dataframe: gpd.GeoDataFrame,
     prediction: np.ndarray,
     index: np.ndarray,
     out: DatasetWriter,
-    stitch: str,
-    stride: int,
+    output_type: str,
 ) -> tuple[np.ndarray, Window]:
     """Outputs patch handled, ready to be written"""
 
-    margin = config["margin"]  # only for clipping
-    img_size = config["img_pixels_detection"]
-    output_type = config["output_type"]  # we only handle argmax for now
+    if output_type != "argmax":
+        print(
+            f"Only 'argmax' output type is supported, sorry. Falling back to 'argmax'."
+        )
+        output_type = "argmax"
+
+    margin = param_combi["margin"]
+    img_size = param_combi["img_pixels_detection"]
+    stitch = param_combi["stitching"]
+    stride = param_combi["stride"]
 
     i = index[0]
     sliced_box = [

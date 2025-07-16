@@ -118,19 +118,24 @@ def load_model_from_cfg_path(cfg_path: str) -> nn.Module:
     return load_model(config)
 
 
-def opti_pruna(model: nn.Module, sparse: float = 0) -> nn.Module:
+def opti_pruna(model: nn.Module, params: dict) -> nn.Module:
     """
     Apply pruna algorithms.
     """
 
-    print(f"Applying pruna with sparsity: {sparse:.2%}")
+    smash_config = SmashConfig()  # see pruna documentation for details
 
-    # config for example
-    smash_config = SmashConfig()
+    for key, value in params.get("methods", {}).items():
+        smash_config[key] = value
 
-    smash_config["pruner"] = "torch_unstructured"
-    # smash_config["torch_unstructured_pruning_method"] = "random"
-    smash_config["torch_unstructured_sparsity"] = sparse
+    sparse = params.get("sparse", 0)
+    if sparse != 0:
+        print(f"Applying pruna with sparsity: {sparse:.2%}")
+
+        smash_config["pruner"] = "torch_unstructured"
+        smash_config["torch_unstructured_sparsity"] = sparse
+        # smash_config["torch_unstructured_pruning_method"] = "random"
+
     # smash_config["quantizer"] = "half"
     # smash_config["quantizer"] = "torch_dynamic"
     # smash_config["compiler"] = "torch_compile"
