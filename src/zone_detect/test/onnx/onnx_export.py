@@ -29,16 +29,15 @@ def check_export_onnx(onnx_path: Path):
     if onnx_path is None:
         print("No ONNX file found.")
     else:
-        print(f"ONNX file found")
         onnx_model = onnx.load(onnx_path)
         onnx.checker.check_model(onnx_model)
-        print("ONNX model is well formed, whatever that means.")
 
 
 def export_onnx(config: dict[str, Any]):
     """
     Export a HuggingFace model to ONNX format, based on a checkpoint file.
     """
+    verbose = config.get("log_verbose", True)
     save_directory = Path(config["model_weights"]).parent
 
     patch_size = config.get(
@@ -69,15 +68,17 @@ def export_onnx(config: dict[str, Any]):
             dummy_input,
             do_constant_folding=True,
             dynamo=True,
+            verbose=verbose,
         )
 
         if onnx_export is not None:
             onnx_export.optimize()
 
             # simplify with ORT
-            simp_onnx_path = simplify_onnx(output_path, onnx_export)
+            simp_onnx_path = simplify_onnx(output_path, onnx_export, verbose=verbose)
 
-            print(f"Model exported to ONNX format to {output_path}")
+            if verbose:
+                print(f"Model exported to ONNX format to {output_path}")
             check_export_onnx(simp_onnx_path)
         else:
             print("ONNX export failed.")
@@ -298,7 +299,9 @@ def patch_constant_nodes(model: onnx.ModelProto) -> onnx.ModelProto:
     return model
 
 
-def simplify_onnx(onnx_path: Path, onnx_program: Optional[ONNXProgram] = None) -> Path:
+def simplify_onnx(
+    onnx_path: Path, onnx_program: Optional[ONNXProgram] = None, verbose: bool = True
+) -> Path:
     """
     Simplify the ONNX model using onnx-simplifier
     Returns the simplified model, which can be used as a standard ONNX model object.
@@ -324,7 +327,8 @@ def simplify_onnx(onnx_path: Path, onnx_program: Optional[ONNXProgram] = None) -
     simplified_path = onnx_path.parent / f"simplified_{onnx_path.name}"
 
     onnx.save(model_simp, simplified_path)
-    print(f"ONNX model simplified and saved to {simplified_path}")
+    if verbose:
+        print(f"ONNX model simplified and saved to {simplified_path}")
 
     return simplified_path
 
