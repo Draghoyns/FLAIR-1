@@ -73,7 +73,8 @@ class FLAIR_ModelFactory:
 
 def get_module(checkpoint: str | Path) -> Mapping:
     if checkpoint is not None and os.path.isfile(checkpoint):
-        weights = torch.load(checkpoint, map_location="cpu", weights_only=False)
+        weights = torch.load(checkpoint, map_location="cpu")
+        print(f"Loaded weights from {checkpoint}")
         if checkpoint.endswith(".ckpt"):  # type: ignore
             weights = weights["state_dict"]
     else:

@@ -1,10 +1,11 @@
 import os
 import torch
+from torch import nn
 import copy
-from torchao.quantization import int8_weight_only, quantize_
+from torchao.quantization import int8_weight_only, quantize_, Int8WeightOnlyConfig
 import torchao
 
-from src.zone_detect.model import load_model
+from src.zone_detect.model import FLAIR_ModelFactory, get_module, load_model
 
 print(f"GPU: {torch.cuda.get_device_name()}")
 print(f"Compute capability: {torch.cuda.get_device_capability()}")
@@ -48,6 +49,9 @@ model = load_model(model_config)
 
 print("Model loaded successfully!")
 
+
+model_config.update({"precision": "int8"})  # or "int8_full"
+
 # model = model.eval().to("cuda")
 model = model.eval()  # from torchao tutorial
 
@@ -58,23 +62,31 @@ model = model.eval()  # from torchao tutorial
 model_original = copy.deepcopy(model)  # keep original
 model = model.to(torch.bfloat16)
 
-precision = "int8"  # or "int8"
+precision = model_config.get("precision", "fp32")
 
 # quantization
 if precision.startswith("int8"):
     quantize_(model, int8_weight_only(group_size=32))  # type: ignore
+    name, tensor = list(model.state_dict().items())[0]
+    print(
+        f"""Model quantized to {model.dtype} successfully!
+Model type after quantization: {type(model)}
+Here is a sample of the quantized state_dict:
+{tensor[0]}
+
+    """
+    )
 
 
 # saving
 save_dir = "/home/ign.fr/SHys/FLAIR-1/0testing_saves"
 if precision.endswith("full"):
-
     torch.save(model, f"{save_dir}/model_{precision}.pth")
 else:
     torch.save(model.state_dict(), f"{save_dir}/model_{precision}.pth")
 torch.save(model_original.state_dict(), f"{save_dir}/model_original.pth")
 
-print("Model 'quantized' and saved successfully!\n")
+print("Model quantized and saved successfully!\n")
 
 # compare sizes
 int4_size_mb = os.path.getsize(f"{save_dir}/model_{precision}.pth") / (1024 * 1024)
@@ -84,3 +96,63 @@ print(f"{precision} model size: {int4_size_mb:.2f} MB")
 print(f"Original model size: {original_size_mb:.2f} MB")
 
 print("Yay everything went well! (for now...)")
+
+# tuto ends here
+# ___________________________________________________#
+# now we load the model to run inference
+
+model_path = f"{save_dir}/model_{precision}.pth"
+model_config["model_weights"] = model_path
+
+
+def custom_load_model(config: dict) -> nn.Module:
+    checkpoint = config["model_weights"]
+
+    model_factory = FLAIR_ModelFactory(config)
+    model = model_factory.seg_model
+
+    # state_dict = get_module(checkpoint=checkpoint)
+
+    state_dict = torch.load(checkpoint, map_location="cpu")
+
+    """print(
+        f"sample state_dict: {state_dict.get('backbone.embeddings.norm.weight', None)}"
+    )"""
+
+    precision = config.get("precision", "fp32")
+    strict = precision == "fp32"  # allow mismatch if quantized
+
+    if precision == "int8":
+
+        model = model.eval().to(torch.bfloat16)
+        quantize_(model, Int8WeightOnlyConfig(group_size=32))  # type: ignore
+        model = model.to("cuda")
+        print(
+            f"""Model skeleton quantized to {model.dtype} successfully!
+Model type after quantization: {type(model)}
+Here is a sample of the quantized skeleton:
+{tensor[0]}
+
+    """
+        )
+
+        """for name, module in model.named_modules():
+            if "QuantLinear" in str(type(module)):
+                print(f"{name}: Quantized Linear layer")
+            else:
+                print(f"{name}: {type(module).__name__}")"""
+
+    model.load_state_dict(
+        state_dict=state_dict,
+        strict=strict,
+    )
+    raise NotImplementedError(
+        "This is a test file for TorchAO, not for inference. Please use the inference.py file instead."
+    )
+    return model
+
+
+model = load_model(model_config)
+
+print("Model loaded for inference!")
+print(f"Model type: {type(model)}")
