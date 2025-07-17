@@ -32,6 +32,7 @@ pruna : true
 onnx: false # if true, use onnx model, else use pytorch model
 log_verbose: false
 save_logs: false # if true, save logs in output_path
+precision : int8
 
 #### NORMALIZATION
 norma_task:

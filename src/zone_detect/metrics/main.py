@@ -239,13 +239,12 @@ def run_pipeline(
 
             # stitching method is handled inside
             prediction, window = stitching(
-                config,
+                combi,
                 sliced_dataframe,
                 prediction,
                 index,
                 out,
-                stitch,
-                stride,
+                output_type=output_type,
             )
             # write
             if output_type == "argmax":
@@ -436,3 +435,5 @@ if __name__ == "__main__":
 
 #### UNET
 # python src/zone_detect/metrics/main.py --data=0testing_saves/data_paths_RVB.csv --ckpt=/media/DATA/INFERENCE_HS/MODELS_IA/FLAIR1/unet_resnet/FLAIR-INC_rgb_15cl_resnet34-unet_weights.pth
+
+# python src/zone_detect/metrics/main.py --data=0testing_saves/data_paths_IRC.csv --ckpt=/
