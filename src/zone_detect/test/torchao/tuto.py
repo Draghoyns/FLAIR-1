@@ -116,40 +116,36 @@ def custom_load_model(config: dict) -> nn.Module:
     state_dict = torch.load(checkpoint, map_location="cpu")
 
     print(f"State_dict: {state_dict.items()}")
-    print(
-        f"sample state_dict: {state_dict.get('backbone.embeddings.norm.weight', None)}"
-    )
 
     precision = config.get("precision", "fp32")
     strict = precision == "fp32"  # allow mismatch if quantized
 
-    if precision == "int8":
-
-        model = model.eval().to(torch.bfloat16)
-        quantize_(model, Int8WeightOnlyConfig(group_size=32))  # type: ignore
-        model = model.to("cuda")
-        print(
-            f"""Model skeleton quantized to {model.dtype} successfully!
+    print(
+        f"""Model skeleton is in {model.dtype} successfully!
 Model type after quantization: {type(model)}
-Here is a sample of the quantized skeleton:
-{tensor[0]}
-
+Model: {model.state_dict().items()}
     """
-        )
-
-        """for name, module in model.named_modules():
-            if "QuantLinear" in str(type(module)):
-                print(f"{name}: Quantized Linear layer")
-            else:
-                print(f"{name}: {type(module).__name__}")"""
+    )
 
     model.load_state_dict(
         state_dict=state_dict,
         strict=strict,
     )
-    raise NotImplementedError(
-        "This is a test file for TorchAO, not for inference. Please use the inference.py file instead."
+    """raise NotImplementedError(
+        "This is a test file for TorchAO, not for inference. Please use the dedicated falir-detect command instead"
     )
+    if precision == "int8":
+
+        model = model.eval().to(torch.bfloat16)
+        quantize_(model, Int8WeightOnlyConfig(group_size=32))  # type: ignore
+        model = model.to("cuda")
+
+        for name, module in model.named_modules():
+            if "QuantLinear" in str(type(module)):
+                print(f"{name}: Quantized Linear layer")
+            else:
+                print(f"{name}: {type(module).__name__}")"""
+
     return model
 
 

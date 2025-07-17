@@ -56,11 +56,21 @@ class FLAIR_ModelFactory:
                 self.config["model_framework"]["HuggingFace"]["org_model"],
                 num_labels=n_classes,
             )
-            self.seg_model = AutoModelForSemanticSegmentation.from_pretrained(
-                self.config["model_framework"]["HuggingFace"]["org_model"],
-                config=cfg_model,
-                ignore_mismatched_sizes=True,
-            )
+            if self.config.get("precision", "fp32") == "int8":
+                quant_cfg = TorchAoConfig(quant_type=Int8WeightOnlyConfig(group_size=32))  # type: ignore
+                self.seg_model = AutoModelForSemanticSegmentation.from_pretrained(
+                    self.config["model_framework"]["HuggingFace"]["org_model"],
+                    config=cfg_model,
+                    ignore_mismatched_sizes=True,
+                    quantization_config=quant_cfg,
+                )
+
+            else:
+                self.seg_model = AutoModelForSemanticSegmentation.from_pretrained(
+                    self.config["model_framework"]["HuggingFace"]["org_model"],
+                    config=cfg_model,
+                    ignore_mismatched_sizes=True,
+                )
 
     def forward(self, x, met=None):
         output = None
