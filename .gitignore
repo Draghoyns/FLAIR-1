@@ -149,3 +149,9 @@ wandb/
 # saved files while testing
 0testing_saves/
 credentials copy.json
+
+# models
+*.ckpt 
+*.pth
+*.pt
+*.onnx
