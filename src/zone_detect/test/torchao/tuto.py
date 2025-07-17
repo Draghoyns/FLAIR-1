@@ -115,9 +115,10 @@ def custom_load_model(config: dict) -> nn.Module:
 
     state_dict = torch.load(checkpoint, map_location="cpu")
 
-    """print(
+    print(f"State_dict: {state_dict.items()}")
+    print(
         f"sample state_dict: {state_dict.get('backbone.embeddings.norm.weight', None)}"
-    )"""
+    )
 
     precision = config.get("precision", "fp32")
     strict = precision == "fp32"  # allow mismatch if quantized
@@ -152,7 +153,7 @@ Here is a sample of the quantized skeleton:
     return model
 
 
-model = load_model(model_config)
+model = custom_load_model(model_config)
 
 print("Model loaded for inference!")
 print(f"Model type: {type(model)}")
