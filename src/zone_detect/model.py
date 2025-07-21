@@ -57,7 +57,9 @@ class FLAIR_ModelFactory:
                 num_labels=n_classes,
             )
             if self.config.get("precision", "fp32") == "int8":
-                quant_cfg = TorchAoConfig(quant_type=Int8WeightOnlyConfig(group_size=32))  # type: ignore
+                # quant_cfg = TorchAoConfig(quant_type=Int8WeightOnlyConfig())  # type: ignore
+                quant_cfg = TorchAoConfig(quant_type=int8_weight_only(group_size=32))  # type: ignore
+
                 self.seg_model = AutoModelForSemanticSegmentation.from_pretrained(
                     self.config["model_framework"]["HuggingFace"]["org_model"],
                     config=cfg_model,
@@ -114,7 +116,8 @@ def load_model(config: dict) -> nn.Module:
     if precision == "int8":
 
         model = model.eval().to(torch.bfloat16)
-        quantize_(model, Int8WeightOnlyConfig(group_size=32))  # type: ignore
+        # quantize_(model, Int8WeightOnlyConfig())  # type: ignore
+        quantize_(model, int8_weight_only(group_size=32))  # type: ignore
         model = model.to("cuda")
 
         for name, module in model.named_modules():

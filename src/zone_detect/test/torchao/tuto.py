@@ -66,14 +66,12 @@ precision = model_config.get("precision", "fp32")
 
 # quantization
 if precision.startswith("int8"):
+    # quantize_(model, Int8WeightOnlyConfig())  # type: ignore
     quantize_(model, int8_weight_only(group_size=32))  # type: ignore
     name, tensor = list(model.state_dict().items())[0]
     print(
         f"""Model quantized to {model.dtype} successfully!
 Model type after quantization: {type(model)}
-Here is a sample of the quantized state_dict:
-{tensor[0]}
-
     """
     )
 
@@ -123,9 +121,9 @@ def custom_load_model(config: dict) -> nn.Module:
     print(
         f"""Model skeleton is in {model.dtype} successfully!
 Model type after quantization: {type(model)}
-Model: {model.state_dict().items()}
     """
     )
+    # print(f"Model: {model.state_dict().items()}")
 
     model.load_state_dict(
         state_dict=state_dict,
