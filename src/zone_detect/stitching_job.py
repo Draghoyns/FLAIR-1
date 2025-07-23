@@ -13,8 +13,6 @@ from src.zone_detect.slicing_job import create_polygon_from_bounds
 
 from src.zone_detect.test.tiles import (
     geo_patch_overlap,
-    geo_to_pixel,
-    patch_overlap,
     patch_weights,
     total_weights,
     out_of_bounds,

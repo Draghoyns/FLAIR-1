@@ -6,7 +6,9 @@ def compile_model(
 ):
     """Compile the PyTorch model for optimization.
     Compilation is done in-place."""
+
     model.compile(mode="reduce-overhead")
+
     return model
 
 

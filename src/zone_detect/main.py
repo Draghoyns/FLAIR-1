@@ -134,6 +134,8 @@ def prepare_model(config: Config, device: torch.device) -> Config:
     """
         )
 
+    optimization = config.get("optimization", False)
+
     onnx = config.get("onnx", False)
     arg_package = dict()
 
@@ -202,8 +204,8 @@ def prepare_model(config: Config, device: torch.device) -> Config:
 
     config.update({"model_type": model_type, "model_args": arg_package})
 
-    # print(f"""    [ ] warming up the model...""")
-    # warmup(model_type, config, arg_package)
+    print(f"""    [ ] warming up the model...""")
+    warmup(model_type, config, arg_package)
 
     return config
 
