@@ -17,8 +17,8 @@ import onnxruntime as ort
 import torch
 from torch.utils.data import DataLoader
 
-from src.zone_detect.dataset import Sliced_Dataset
-from src.zone_detect.inference import inference
+from src.zone_detect.dataset import Sliced_Dataset, post_processing
+from src.zone_detect.inference import inference, warmup
 from src.zone_detect.model import load_model, opti_pruna
 from src.zone_detect.slicing_job import slice_extent, slice_extent_separate
 from src.zone_detect.stitching_job import stitching
@@ -168,6 +168,9 @@ def prepare_model(config: Config, device: torch.device) -> Config:
         ## loading model and weights
         model = load_model(config)
 
+        # TODO
+        # model = optimize(model, config)
+
         if config.get("pruna", False):
             params = config.get("pruna_args", {})
 
@@ -199,6 +202,9 @@ def prepare_model(config: Config, device: torch.device) -> Config:
 
     config.update({"model_type": model_type, "model_args": arg_package})
 
+    # print(f"""    [ ] warming up the model...""")
+    # warmup(model_type, config, arg_package)
+
     return config
 
 
@@ -224,9 +230,10 @@ def prepare_output(
             "blockysize": size,
         }
     )
-    out_profile["count"] = (
-        2 if config["output_type"] == "argmax" else config["n_classes"]
-    )
+
+    output_type = config["effective_output_type"]
+
+    out_profile["count"] = 2 if output_type == "argmax" else config["n_classes"]
     # second band gives the max probability
 
     out = rasterio.open(path_out, "w+", **out_profile)
@@ -290,6 +297,10 @@ def run_pipeline(config: Config) -> None:
         stride = combi["stride"]
         stitch = combi["stitching"]
 
+        effective_output_type = (
+            output_type if stitch == "exact-clipping" else "class_prob"
+        )
+
         config.update(
             {
                 "img_pixels_detection": img_pixels_detection,
@@ -297,6 +308,7 @@ def run_pipeline(config: Config) -> None:
                 "padding": padding,
                 "stride": stride,
                 "stitching": stitch,
+                "effective_output_type": effective_output_type,
             }
         )
 
@@ -350,7 +362,7 @@ def run_pipeline(config: Config) -> None:
                     prediction,
                     index,
                     out,
-                    config["output_type"],
+                    config["effective_output_type"],
                 )
 
                 prediction_to_write = prediction.copy()
@@ -359,7 +371,7 @@ def run_pipeline(config: Config) -> None:
                 # add threshold to post process probabilities -> e.g. range [0.5, 0.9]
 
                 # write
-                if output_type == "argmax":
+                if effective_output_type == "argmax":
                     out.write_band([1, 2], prediction_to_write, window=window)
                 else:
                     out.write_band(
@@ -420,6 +432,9 @@ def run_pipeline(config: Config) -> None:
 
             print(f"""    [X] done writing metrics to {metrics_json.name} file.\n""")
             processed_area += single_area
+
+        if effective_output_type != output_type:
+            post_processing(output_type, path_out)
 
     sys.stdout = sys.__stdout__
 

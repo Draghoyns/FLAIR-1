@@ -12,6 +12,8 @@ from src.zone_detect.dataset import convert
 from src.zone_detect.slicing_job import create_polygon_from_bounds
 
 from src.zone_detect.test.tiles import (
+    geo_patch_overlap,
+    geo_to_pixel,
     patch_overlap,
     patch_weights,
     total_weights,
@@ -51,21 +53,30 @@ def stitching(
     out: DatasetWriter,
     output_type: str,
 ) -> tuple[np.ndarray, Window]:
-    """Outputs patch handled, ready to be written"""
+    """Outputs patch handled, ready to be written.
+    Args:
+        param_combi: dict containing the parameters for stitching
+            - stitching, margin, img_pixels_detection, stride
+            - stitching supports 'exact-clipping', 'average', 'average-weights', 'max'
+        sliced_dataframe: GeoDataFrame with the sliced patches
+        prediction: model's prediction for the patch
+        index: index of the patch in the sliced dataframe
+        out: rasterio DatasetWriter to write the output
+        output_type: type of output to convert to (e.g., 'argmax', 'class_prob')
+    Returns:
+        tuple of prediction and window to write
 
-    if output_type != "argmax":
-        print(
-            f"Only 'argmax' output type is supported, sorry. Falling back to 'argmax'."
-        )
-        output_type = "argmax"
+    TODO: custom function for overlap handling
+    """
 
     margin = param_combi["margin"]
     img_size = param_combi["img_pixels_detection"]
     stitch = param_combi["stitching"]
     stride = param_combi["stride"]
 
+    # get inner box coordinates
     i = index[0]
-    sliced_box = [
+    effective_patch_geo_box = [
         sliced_dataframe.at[i, "left"],
         sliced_dataframe.at[i, "right"],
         sliced_dataframe.at[i, "bottom"],
@@ -73,22 +84,17 @@ def stitching(
     ]  # geo
 
     # align to resolution
-    sliced_box = [round(coord, 3) for coord in sliced_box]
+    effective_patch_geo_box = [round(coord, 3) for coord in effective_patch_geo_box]
 
-    if stitch == "exact-clipping" or output_type == "class_prob":
+    if "exact" in stitch:
         # default
-        # removing margins
-        prediction = prediction[
-            :,
-            0 + margin : img_size - margin,
-            0 + margin : img_size - margin,
-        ]
-        prediction = convert(prediction, output_type)
+        prediction = exact_stitching(prediction, img_size, margin, output_type)
 
         # get the window
-        sliced_patch_bounds = create_polygon_from_bounds(*sliced_box)
-        window = geometry_window(out, [sliced_patch_bounds], pixel_precision=6)
+        eff_patch_bounds = create_polygon_from_bounds(*effective_patch_geo_box)
+        window = geometry_window(out, [eff_patch_bounds], pixel_precision=6)
         window = round_shape(window, op="ceil", pixel_precision=4)
+
         return prediction, window
 
     else:
@@ -96,53 +102,127 @@ def stitching(
         # _________GETTING_WINDOW__________#
         # out of bounds handling and get the patch plus the margin
 
-        i = index[0]
         bigbox = [
             sliced_dataframe.at[i, "left_o"],
             sliced_dataframe.at[i, "right_o"],
             sliced_dataframe.at[i, "bottom_o"],
             sliced_dataframe.at[i, "top_o"],
-        ]  # geo
-        oob = np.array(out_of_bounds(bigbox, sliced_box)).astype(int)
+        ]  # geo, whole image bounds
+
+        bigbox = [round(coord, 3) for coord in bigbox]
+
+        # don't take margin into account for out of bounds
+        oob = np.array(out_of_bounds(bigbox, effective_patch_geo_box)).astype(int)
         oob[0] *= -1
         oob[2] *= -1
 
-        bounding_box = np.array(sliced_box) + oob * margin  # geo
+        resolution = abs(round(sliced_dataframe.at[i, "resolution_x"], 5))
+
+        geomargin = margin * resolution
+
+        patch_including_margin = (
+            np.array(effective_patch_geo_box) + oob * geomargin
+        )  # geo
 
         window = geometry_window(
-            out, [create_polygon_from_bounds(*bounding_box)], pixel_precision=6
+            out,
+            [create_polygon_from_bounds(*patch_including_margin)],
+            pixel_precision=6,
         )
 
         possible_overlap = out.read(
             window=window
-        )  # array of shape (bands, height, width)
-
-        # help averaging
-        size = out.profile["width"], out.profile["height"]
-        # yes be careful, sliced_box should be in pixel coord for this function
-        overlapping = patch_overlap(size, img_size, sliced_box, stride)
+        )  # array of shape (bands, patch_size, patch_size)
 
         # note : be really careful where you have geo coord and pixel coord
         # TODO : stay at pixel level the longest possible
 
-        if stitch == "average":  # only for class_prob
+        if stitch == "average":
 
-            prediction = prediction / overlapping
-            prediction += possible_overlap
-            prediction = convert(prediction, output_type)
+            prediction = average_stitching(
+                prediction,
+                possible_overlap,
+                img_size,
+                patch_including_margin,
+                bigbox,
+                stride,
+                margin,
+                out,
+                oob,
+            )
 
-            pass
-        elif stitch == "average_weights":
+        elif stitch == "average-weights":
             weights = patch_weights(img_size, sigma=0.5, mode="exp")
-            distance_map = total_weights(size, img_size, sliced_box, stride)
+            size = out.profile["width"], out.profile["height"]
+            distance_map = total_weights(
+                size, img_size, effective_patch_geo_box, stride
+            )
             prediction = prediction * weights / distance_map
             prediction += possible_overlap
-            prediction = convert(prediction, output_type)
 
-        elif stitch == "max":
-            prediction = convert(prediction, output_type)
+        prediction = convert(prediction, output_type)
 
+        if stitch == "max":
             better_past = possible_overlap[0] > prediction[0]
             prediction[:, better_past] = possible_overlap[:, better_past]
 
     return prediction, window
+
+
+def average_stitching(
+    prediction: np.ndarray,
+    possible_overlap: np.ndarray,
+    img_size: int,
+    bounding_box: list[float],
+    bigbox: list[float],
+    stride: int,
+    margin: int,
+    out: DatasetWriter,
+    oob: np.ndarray,
+) -> np.ndarray:
+    """Average the prediction with the overlapping patch."""
+
+    overlapping = geo_patch_overlap(out, img_size, bounding_box, bigbox, stride)
+
+    h, w = possible_overlap.shape[-2:]
+    # If oob[0] (left) == -1, crop from left side
+    col_start = margin if oob[0] == -1 else 0
+    col_end = col_start + w
+    # If oob[2] (bottom) == -1, crop from bottom side
+    row_start = margin if oob[2] == -1 else 0
+    row_end = row_start + h
+
+    # crop of bounds elements
+    prediction = prediction[:, row_start:row_end, col_start:col_end]
+
+    print(f"\nFirst pixel gives the prediction:\n {prediction[:, 0, 0]}")
+
+    prediction = prediction / overlapping
+
+    print(f"\nFirst pixel after overlap handling:\n {prediction[:, 0, 0]}")
+
+    prediction += possible_overlap
+
+    print(f"\nFirst pixel after adding current result:\n {prediction[:, 0, 0]}")
+
+    return prediction
+
+
+def exact_stitching(
+    prediction: np.ndarray,
+    img_size: int,
+    margin: int,
+    output_type: str,
+) -> np.ndarray:
+    """Perform exact stitching by removing margins."""
+
+    # removing margins
+    prediction = prediction[
+        :,
+        0 + margin : img_size - margin,
+        0 + margin : img_size - margin,
+    ]
+
+    prediction = convert(prediction, output_type)
+
+    return prediction

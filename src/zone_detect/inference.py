@@ -123,3 +123,26 @@ def inference_onnx(
     predictions = softmax(logits, axis=1)
 
     return predictions, samples["index"].numpy()
+
+
+def warmup(
+    model_type: str,
+    config: dict[str, Any],
+    args: dict[str, Any],
+) -> None:
+
+    size = (
+        1,
+        len(config["channels"]),
+        config["img_pixels_detection"],
+        config["img_pixels_detection"],
+    )
+    samples = {"image": torch.randn(*size), "index": torch.tensor([0])}
+
+    for _ in range(10):
+        _ = inference(
+            model_type=model_type,
+            config=config,
+            args=args,
+            samples=samples,
+        )

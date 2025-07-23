@@ -129,7 +129,10 @@ def read_config(arguments: dict) -> Config:
 
 
 def preprocess_config(config: Config) -> Config:
-    """Clean the config file by formatting correctly and raising obvious errors before any run."""
+    """Clean the config file by formatting correctly and raising obvious errors before any run.
+
+    TODO: preprocess in a non-blocking manner, summarize config and ask for confirmation before any run.
+    """
 
     # paths
     # check existence
@@ -186,6 +189,7 @@ def preprocess_config(config: Config) -> Config:
 
     if config["compare"]:
 
+        # tiling
         config["strategies"]["tiling"]["size_range"] = check_list_type(
             config["strategies"]["tiling"]["size_range"], int
         )
@@ -195,9 +199,22 @@ def preprocess_config(config: Config) -> Config:
         assert all(
             i >= 0 and i <= 1 for i in config["strategies"]["tiling"]["stride_range"]
         ), "Stride should be a percentage"
+
+        # stitching
         config["strategies"]["stitching"]["methods"] = check_list_type(
             config["strategies"]["stitching"]["methods"], str
         )
+        for meth in config["strategies"]["stitching"]["methods"]:
+            if meth not in [
+                "exact-clipping",
+                "average",
+                "average-weights",
+                "max",
+            ]:
+                print(
+                    f"Warning: {meth} is not a valid stitching method.  Using default 'exact-clipping' instead."
+                )
+                config["strategies"]["stitching"]["methods"] = ["exact-clipping"]
 
         # if margin is a percentage, convert to int (pixels)
         # check if converted margin is valid

@@ -1,3 +1,4 @@
+import os
 import geopandas as gpd
 import numpy as np
 
@@ -12,28 +13,50 @@ import rasterio.windows
 
 def convert(img: np.ndarray, img_type: str) -> np.ndarray:
     """Convert the image and keep the best class
-    or keep all probabilities in separate bands"""
+    or keep all probabilities in separate bands and convert to color scale."""
 
     if img_type == "class_prob":
         if img.max() > 1:
-            info = np.iinfo(img.dtype)  # get input datatype information
-            if info:
+            if np.issubdtype(img.dtype, np.integer):
+                info = np.iinfo(img.dtype)
                 img = img.astype(np.float32) / info.max  # normalize [0,1]
+            else:
+                img = (
+                    img.astype(np.float32) / img.max()
+                )  # fallback: normalize by max value
         img = (img * 255).astype(np.uint8)
-        return img
 
     elif img_type == "argmax":
         img_arg = np.argmax(img, axis=0).astype(np.uint8)
         img_arg = np.expand_dims(img_arg, axis=0)
+
         img_max = np.max(img, axis=0).astype(np.float32)
         img_max = np.expand_dims(img_max, axis=0)
-        return np.concatenate(
-            [img_arg, img_max], axis=0
-        )  # not sure about compatibility
+        img = np.concatenate([img_arg, img_max], axis=0)  # not sure about compatibility
 
     else:
         print("The output type has not been interpreted.")
-        return img
+
+    return img
+
+
+# entry point is sound
+def post_processing(
+    output_type: str,
+    path_before: str,
+) -> None:
+    """Post processing of the image if needed"""
+    print(f"""    [ ] post processing...""")
+    with rasterio.open(path_before) as src:
+        img = src.read()
+        profile = src.profile
+
+    img = convert(img, output_type)
+    profile["count"] = img.shape[0]
+    os.remove(path_before)
+
+    with rasterio.open(path_before, "w", **profile) as dst:
+        dst.write(img)
 
 
 class Sliced_Dataset(Dataset):

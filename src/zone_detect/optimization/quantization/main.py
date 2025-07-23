@@ -1,6 +1,6 @@
 import argparse
 
-from src.zone_detect.quantization.run import dry_run, run_pipeline
+from src.zone_detect.optimization.quantization.run import dry_run, run_pipeline
 from src.zone_detect.utils import initial_log
 
 

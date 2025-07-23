@@ -130,7 +130,9 @@ def ground_truth_geoconv(
 
 if __name__ == "__main__":
 
-    config_dir = "/media/DATA/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/"
+    config_dir = (
+        "/media/DATA/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/configs/"
+    )
 
     # default
     # config_file = "config_argmax_small_irc_test.yaml"
@@ -194,3 +196,37 @@ if __name__ == "__main__":
     # "/media/DATA/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out20250514/20250514_174851_margin=0"
 
     # error_rate_loop(Path(truth), Path(out_dir), Path(pred_dir))
+
+    toy_prediction = np.array(
+        [
+            [
+                [0.9, 0.9, 0.1],
+                [0.9, 0.9, 0.1],
+                [0.1, 0.1, 0.1],
+            ],
+            [
+                [0.1, 0.1, 0.9],
+                [0.1, 0.1, 0.9],
+                [0.9, 0.9, 0.9],
+            ],
+        ],
+        dtype=np.float32,
+    )
+
+    overlapping = np.array(
+        [
+            [4, 2, 4],
+            [2, 1, 2],
+            [4, 2, 4],
+        ],
+        dtype=np.float32,
+    )
+    stride = 2
+    margin = 1
+
+    possible_overlap = np.zeros((3, 3), dtype=np.float32)
+
+    toy_prediction = toy_prediction / overlapping
+    toy_prediction += possible_overlap
+
+    print("Toy prediction:\n", toy_prediction)

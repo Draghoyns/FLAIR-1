@@ -106,6 +106,8 @@ def slice_extent(
                     "bottom_o": min_y,
                     "right_o": max_x,
                     "top_o": max_y,
+                    "resolution_x": resolution_x,
+                    "resolution_y": resolution_y,
                     "geometry": create_box_from_bounds(
                         x_coord,
                         x_coord + geo_output_w,

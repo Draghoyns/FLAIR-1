@@ -62,7 +62,7 @@ def patch_overlap(
     """Works in pixels"""
 
     x_min, x_max, y_min, y_max = query_bounds
-    overlap_map = np.zeros((y_max - y_min, x_max - x_min), dtype=np.uint8)
+    overlap_map = np.zeros((patch_size, patch_size), dtype=np.uint8)
 
     image_size_x, image_size_y = image_size
 
@@ -93,7 +93,42 @@ def patch_overlap(
                     local_y_start : local_y_start + h, local_x_start : local_x_start + w
                 ] += 1
 
+    # ensure no division by zero
+    overlap_map[overlap_map == 0] = 1
+
     return overlap_map
+
+
+def geo_patch_overlap(
+    out: Any,  # DatasetWriter or similar object
+    patch_size: int,
+    query_bounds: list[float],
+    big_box: list[float],
+    stride: int,
+) -> np.ndarray:
+    """Works in geo coordinates.
+    Converts geo coordinates to pixel coordinates and computes the overlap map, which represents how much overlap of patch there will be on a given pixel of the patch passed as argument.
+    Args:
+        out: DatasetWriter or similar object to get the profile and transform
+        patch_size: size of the patch in pixels
+        query_bounds: bounding box in geo coordinates [left, right, bottom, top]
+        big_box: bounding box of the whole image in geo coordinates [left, right, bottom, top]
+        stride: stride for the tiling
+    Returns:
+        overlap_map: numpy array representing the overlap map
+    """
+    transform = out.profile["transform"]
+    size = out.profile["width"], out.profile["height"]
+
+    # Convert geo coordinates to pixel coordinates
+    query_bounds_pixel = geo_to_pixel(query_bounds, big_box, transform, patch_size)
+
+    return patch_overlap(
+        image_size=size,
+        patch_size=patch_size,
+        query_bounds=query_bounds_pixel,
+        stride=stride,
+    )
 
 
 def patch_weights(patch_size: int, sigma: float, mode: str) -> np.ndarray:
@@ -169,3 +204,40 @@ def total_weights(
     # no inversion
     # no normalization
     return map, steps
+
+
+def geo_to_pixel(
+    bounding_box: list[float],
+    big_box: list[float],
+    transform: list[float],
+    img_size: int,
+) -> list[int]:
+    """Convert geo coordinates to pixel coordinates"""
+
+    transformed = [
+        int((bounding_box[0] - transform[2]) / transform[0]),
+        int((bounding_box[1] - transform[5]) / transform[4]),
+        int((bounding_box[2] - transform[2]) / transform[0]),
+        int((bounding_box[3] - transform[5]) / transform[4]),
+    ]
+    x_min = min(transformed[0], transformed[2])
+    y_min = min(transformed[1], transformed[3])
+
+    pixelled_box = [
+        x_min,
+        x_min + img_size,
+        y_min,
+        y_min + img_size,
+    ]
+
+    # map limits to pixel coordinates
+    if bounding_box[0] == big_box[0]:
+        pixelled_box[0] = 0
+    if bounding_box[1] == big_box[1]:
+        pixelled_box[1] = img_size
+    if bounding_box[2] == big_box[2]:
+        pixelled_box[2] = 0
+    if bounding_box[3] == big_box[3]:
+        pixelled_box[3] = img_size
+
+    return pixelled_box

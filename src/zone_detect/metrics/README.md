@@ -46,6 +46,7 @@ python main.py --data=data_paths.csv --ckpt=SwinUpernet_Small.ckpt
 
 - Ensure the input dataset matches the expected structure.
 - For more details, refer to the code in `main.py`.
+- For custom parameters, you can manually change `frozen_config.yaml`
 
 ## TODO
 
