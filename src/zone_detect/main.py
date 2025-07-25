@@ -30,6 +30,7 @@ from src.zone_detect.utils import (
     setup_out_path,
     setup,
     Logger,
+    timer,
 )
 
 Config = dict[str, Any]
@@ -101,6 +102,7 @@ def run_pipeline(config: Config) -> None:
     for combi in settings:
 
         method_metrics_per_patch = []
+        timings = {}
 
         img_pixels_detection = combi["img_pixels_detection"]
         margin = combi["margin"]
@@ -126,13 +128,14 @@ def run_pipeline(config: Config) -> None:
         method = f"size={img_pixels_detection}_stride={stride}_margin={margin}_padding={padding}_stitching={stitch}"
         identifier = "_" + method
 
-        # start timer
-        timer_data = datetime.datetime.now()
+        method_start = datetime.datetime.now()
 
-        dataset, data_loader, sliced_dataframe, profile = prepare_data(config)
-        data_prep_time = (
-            datetime.datetime.now() - timer_data
-        ).total_seconds() * 1000  # ms
+        timed_prepare_data = timer(timings)(prepare_data)
+        # timer_data = datetime.datetime.now()
+
+        dataset, data_loader, sliced_dataframe, profile = timed_prepare_data(config)
+        # data_prep_time = ( datetime.datetime.now() - timer_data).total_seconds() * 1000  # ms
+        data_prep_time = timings["prepare_data"]
 
         single_area = sliced_dataframe["geometry"].area.sum()
 
@@ -146,21 +149,19 @@ def run_pipeline(config: Config) -> None:
         pure_infer_time = 0  # ms
         data_write_time = 0  # ms
 
+        timed_inference = timer(timings)(inference)
+
         print(f"""    [ ] starting inference...\n""")
         for samples in tqdm(data_loader):
 
-            timer_start = datetime.datetime.now()
-
-            predictions, indices = inference(
+            predictions, indices = timed_inference(
                 model_type=model_type,
                 config=config,
                 args=model_args,
                 samples=samples,
             )
 
-            pure_infer_time += (
-                datetime.datetime.now() - timer_start
-            ).total_seconds() * 1000  # ms
+            pure_infer_time += timings["inference"]
 
             # writing windowed raster to output raster
             timer_write = datetime.datetime.now()
@@ -208,7 +209,9 @@ def run_pipeline(config: Config) -> None:
                     )
         # end of loop on one method
         ### timing
-        total_time = (datetime.datetime.now() - timer_data).total_seconds() * 1000  # ms
+        total_time = (
+            datetime.datetime.now() - method_start
+        ).total_seconds() * 1000  # ms
         if method not in method_times:
             method_times[method] = {
                 "data_prep_time": [data_prep_time],

@@ -50,7 +50,7 @@ def conf_log(
         compare_param = f"""
     |- overlapping strategy: {"handled" if compare_handling  else "exact"}
     |- tiling comparison: {"yes" if (compare_handling and strategies['tiling']['enabled']) else "no"}
-    |- stitching comparison: {"no" if not compare_handling else strategies['stitching']['method']}
+    |- stitching comparison: {"no" if not compare_handling else strategies['stitching']['methods']}
     |- padding: {"not handled" if not compare_handling else strategies['padding_overall']} \n """
     else:
         compare_param = ""
@@ -110,6 +110,24 @@ def initial_log() -> None:
     print(f"cuDNN        : {torch.backends.cudnn.version()}")
     print(f"PyTorch      : {torch.__version__}")
     print(f"ONNX         : {onnx.__version__}")  # type: ignore
+
+
+#### TIMING ####
+def timer(timings):
+    def decorator(func):
+        """Decorator to time a function execution."""
+
+        def wrapper(*args, **kwargs):
+            start_time = datetime.now()
+            result = func(*args, **kwargs)
+            end_time = datetime.now()
+            elapsed_time = end_time - start_time
+            timings[func.__name__] = elapsed_time.total_seconds() * 1000
+            return result
+
+        return wrapper
+
+    return decorator
 
 
 #### CONFIG ####
@@ -403,7 +421,8 @@ def setup_out_path(config: Config) -> Config:
         current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
         child_dir = child_dir / Path(current_time)
         os.makedirs(child_dir, exist_ok=True)
-        print(f"Creating output directory: {child_dir}")
+        if config.get("log_verbose", False):
+            print(f"Creating output directory: {child_dir}")
 
     config["local_out"] = child_dir
 
