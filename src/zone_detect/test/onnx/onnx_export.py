@@ -38,20 +38,23 @@ def export_onnx(config: dict[str, Any]):
     Export a HuggingFace model to ONNX format, based on a checkpoint file.
     """
     verbose = config.get("log_verbose", True)
-    save_directory = Path(config["model_weights"]).parent
-
     patch_size = config.get(
         "img_pixels_detection", 512
     )  # do we really need to ? can't it be dynamic ?
     n_bands = len(config["channels"])
     batch_size = config.get("batch_size", 2)
 
-    size_name = f"{batch_size}x{n_bands}x{patch_size}x{patch_size}"
+    if config.get("onnx_path", ""):
+        output_path = Path(config["onnx_path"])
+    else:
+        save_directory = Path(config["model_weights"]).parent
 
-    model_name = config["model_framework"]["HuggingFace"]["org_model"]
-    filename = f"{model_name}_{size_name}.onnx"
-    output_path = save_directory / filename
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+        size_name = f"{batch_size}x{n_bands}x{patch_size}x{patch_size}"
+
+        model_name = config["model_framework"]["HuggingFace"]["org_model"]
+        filename = f"{model_name}_{size_name}.onnx"
+        output_path = save_directory / filename
+        output_path.parent.mkdir(parents=True, exist_ok=True)
 
     model = load_model(config)
     model.eval()
@@ -111,6 +114,8 @@ def get_onnx_path(config: dict[str, Any]) -> Path:
 
     if not onnx_path.exists():
         print(f"ONNX model not found at {onnx_path}. Exporting...")
+        config.update({"onnx_path": onnx_path})
+        # Export the model to ONNX format
         onnx_path = export_onnx(config)
 
     return onnx_path
@@ -324,7 +329,7 @@ def simplify_onnx(
     assert check, "Simplified ONNX model could not be validated"
 
     # save the simplified model
-    simplified_path = onnx_path.parent / f"simplified_{onnx_path.name}"
+    simplified_path = onnx_path.parent / f"{onnx_path.name}"
 
     onnx.save(model_simp, simplified_path)
     if verbose:
