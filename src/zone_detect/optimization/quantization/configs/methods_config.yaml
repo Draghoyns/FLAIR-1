@@ -1,15 +1,15 @@
 pytorch_baseline :
   enable : true
-  precision : fp32
+  precision : float32
 
 onnx_baseline :
   enable : true
-  precision : fp32
+  precision : float32
   flag : onnx
 
 pruned : 
   enable : true
-  precision : fp32
+  precision : float32 
   flag : pruna
   sparse : 0.005
   methods:
@@ -17,14 +17,14 @@ pruned :
 
 pruna_half :
   enable : true
-  precision : fp16
+  precision : float16
   flag : pruna
   methods:
     quantizer : half
 
 pruna_half_pruned :
   enable : true
-  precision : fp16
+  precision : float16
   flag : pruna
   sparse : 0.005
   methods:
@@ -33,7 +33,7 @@ pruna_half_pruned :
 
 pytorch_bf16 : 
   enable : true
-  precision : torch.bfloat16
+  precision : bfloat16
   flag: pytorch
 
 ao_weights-only_int8 :

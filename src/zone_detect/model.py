@@ -138,7 +138,6 @@ def opti_pruna(model: nn.Module, params: dict) -> nn.Module:
 
     # smash_config["quantizer"] = "half"
     # smash_config["quantizer"] = "torch_dynamic"
-    # smash_config["compiler"] = "torch_compile"
 
     model = smash(model=model, smash_config=smash_config)
 
