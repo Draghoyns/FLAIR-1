@@ -2,7 +2,7 @@
 
 # loading an already quantized model is handled using torchao
 
-from onnxruntime.quantization import quantize_dynamic, QuantType
+from onnxruntime.quantization import quantize_dynamic
 from onnxruntime.quantization.shape_inference import quant_pre_process
 
 model_fp32 = "/media/DATA/INFERENCE_HS/MODELS_IA/FLAIR1/swin-upernet-small_IRV_SET1/checkpoints/openmmlab/upernet-swin-small_gpu_1x3x512x512.onnx"

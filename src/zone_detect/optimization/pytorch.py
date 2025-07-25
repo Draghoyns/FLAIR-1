@@ -1,3 +1,4 @@
+from typing import Any
 import torch
 
 from src.zone_detect.metrics.metrics import sparsity
@@ -51,12 +52,29 @@ def opti_quantization(
     if verbose:
         print(f"Quantizing model to {dtype}...")
 
-    if dtype == torch.bfloat16:
+    if dtype in (torch.bfloat16, torch.float16):
         # simple truncation
         model = model.to(dtype)
+        # converting all parameters to bfloat16
+        for param in model.parameters():
+            param.requires_grad = False
+
+        original_forward = model.forward
+
+        def new_forward(*args: Any, **kwargs: Any) -> Any:
+            args = tuple(arg.to(dtype) if hasattr(arg, "to") else arg for arg in args)
+            kwargs = {
+                k: v.to(dtype) if hasattr(v, "to") else v for k, v in kwargs.items()
+            }
+            return original_forward(*args, **kwargs)
+
+        model.forward = new_forward
 
     else:
+        # use torchao quantization
+        # check precision and device compatibility
         # apply quantization
+
         print("Quantization not implemented for this dtype, this is a placeholder.")
         pass
 
