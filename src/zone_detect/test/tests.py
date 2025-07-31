@@ -8,13 +8,11 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from sklearn.metrics import confusion_matrix
-
 import rasterio
 
 from src.zone_detect.metrics.metrics import *
-from src.zone_detect.test.tiles import get_stride
-from src.zone_detect.utils import extract_method, info_extract
+from src.zone_detect.tiles import get_stride
+from src.zone_detect.utils import info_extract
 
 
 def test_error_rate(img_path: Path, out_dir: Path, verbose: bool = False) -> None:

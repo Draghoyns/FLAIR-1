@@ -11,10 +11,10 @@ from src.zone_detect.dataset import Sliced_Dataset
 from src.zone_detect.inference import warmup
 from src.zone_detect.model import load_model
 
-from src.zone_detect.optimization.onnx import get_session, onnx_optimize_model
-from src.zone_detect.optimization.pytorch import pt_optimize_model
+from src.zone_detect.optimization.onnx_opti import get_session, onnx_optimize_model
+from src.zone_detect.optimization.pytorch_opti import pt_optimize_model
 from src.zone_detect.slicing_job import slice_extent
-from src.zone_detect.test.onnx.onnx_export import get_onnx_path
+from src.zone_detect.test.onnx_tests.onnx_export import get_onnx_path
 from src.zone_detect.utils import conf_log, setup_indiv_path
 
 Config = dict[str, Any]
@@ -138,8 +138,6 @@ def prepare_data(
     )
 
     # get Dataloader
-    print(f"Using batch size: {config['batch_size']}")
-
     data_loader = DataLoader(
         dataset,
         batch_size=config["batch_size"],
@@ -175,6 +173,6 @@ def prepare_tiles(
     log_verbose = config.get("log_verbose", True)
     if log_verbose:
         conf_log(config, resolution, img_size)
-    print(f"""    [x] sliced input raster to {len(sliced_dataframe)} squares...""")
+        print(f"""    [x] sliced input raster to {len(sliced_dataframe)} squares...""")
 
     return sliced_dataframe, profile, resolution

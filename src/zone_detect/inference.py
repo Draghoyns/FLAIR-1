@@ -5,6 +5,7 @@ import torch
 from typing import Any
 
 import onnxruntime as ort
+import tqdm
 
 
 def inference(
@@ -98,7 +99,7 @@ def warmup(
     )
     samples = {"image": torch.randn(*size), "index": torch.tensor([0])}
 
-    for _ in range(10):
+    for _ in tqdm.trange(10, desc="Warming up model"):
         _ = inference(
             model_type=model_type,
             config=config,
