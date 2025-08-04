@@ -69,6 +69,35 @@ def create_data(input_dir: str, truth_dir: str, data_type: str):
     return pd.DataFrame(data)
 
 
+def interactive_dataset() -> str:
+    """Interactive function to get dataset paths from user input."""
+
+    print("You did not provide a dataset paths file, let's create one together !\n")
+
+    input_dir = input("\nWhat is the input data main folder: ")
+    input_dir = input_dir.strip()
+    if not os.path.isdir(input_dir):
+        raise ValueError(f"Input directory {input_dir} does not exist.")
+
+    truth_dir = input("\nWhat is the ground truth main folder: ")
+    truth_dir = truth_dir.strip()
+    if not os.path.isdir(truth_dir):
+        raise ValueError(f"Truth directory {truth_dir} does not exist.")
+
+    data_type = input("\nWhat is the data type (IRC, RVB, RVBI, RVBIE): ")
+    data_type = data_type.strip().upper()
+    if data_type not in ["IRC", "RVB", "RVBI", "RVBIE"]:
+        raise ValueError(
+            f"Invalid data type {data_type}. Must be one of: IRC, RVB, RVBI, RVBIE."
+        )
+    print(f"\nCreating dataset for {data_type} data...")
+    df = create_data(input_dir, truth_dir, data_type)
+    df.to_csv(f"data_paths_{data_type}.csv", index=False)
+    print(f"Data paths saved to data_paths_{data_type}.csv")
+
+    return f"data_paths_{data_type}.csv"
+
+
 def main():
     input_dir = "/media/DATA/INFERENCE_HS/DATA/dataset_zone_last/ortho"
     truth_dir = "/media/DATA/INFERENCE_HS/DATA/dataset_zone_last/labels_raster/FLAIR_19"

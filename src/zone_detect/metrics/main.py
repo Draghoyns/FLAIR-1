@@ -35,6 +35,7 @@ from codecarbon import OfflineEmissionsTracker
 
 from src.zone_detect.inference import inference
 from src.zone_detect.main import Logger, prepare_data, prepare_model, prepare_output
+from src.zone_detect.metrics.create_dataset import interactive_dataset
 from src.zone_detect.metrics.metrics import add_confusion, process_metrics
 from src.zone_detect.stitching_job import stitching
 from src.zone_detect.utils import (
@@ -75,8 +76,12 @@ def set_config(args, arguments: dict[str, str]) -> Config:
     # load config file and set up device
     config, device, use_gpu = setup(arguments)
 
+    data = args.data
+    if not data:
+        data = interactive_dataset()
+
     # set paths
-    config["data_paths"] = args.data
+    config["data_paths"] = data
     config["model_weights"] = args.ckpt
 
     # set model
