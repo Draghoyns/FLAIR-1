@@ -67,6 +67,11 @@ def set_config(args, arguments: dict[str, str]) -> Config:
     # truth_root: / + dpt + zone
     # truth_path : .tif
 
+    # get data type
+    data_type = get_datatype_from_ckpt(args.ckpt)
+    conf = f"src/zone_detect/metrics/configs/frozen_config_{data_type}.yaml"
+    arguments["conf"] = conf
+
     # load config file and set up device
     config, device, use_gpu = setup(arguments)
 
@@ -389,29 +394,29 @@ def batch_pipeline(config: Config) -> None:
     print(f"Metrics saved to {out}")
 
 
-def main(SPARSE=None):
-
-    # get data paths and model ckpt
-    args = argParser.parse_args()
-
-    # get data type
-    ckpt: str = args.ckpt.lower()
-
+def get_datatype_from_ckpt(ckpt: str) -> str:
+    """Extracts the data type from the checkpoint name."""
+    print(
+        "[!] Make sure the checkpoint name contains the data type, that is 'IRC' or 'RVB'."
+    )
+    ckpt = ckpt.lower()
     if "irc" in ckpt or "ir-r-g" in ckpt and "rvb" not in ckpt and "rvb" not in ckpt:
-        data_type = "IRC"
+        return "IRC"
     elif "rvb" in ckpt or "rgb" in ckpt:
-        data_type = "RVB"
+        return "RVB"
     else:
         print(
             "WARNING: No data type found in the checkpoint name, defaulting to IRC. "
             "Please ensure the checkpoint name contains 'IRC' or 'RVB'."
         )
-        data_type = "IRC"
+        return "IRC"
 
-    arguments = {
-        "conf": f"src/zone_detect/metrics/configs/frozen_config_{data_type}.yaml",
-        "sparse": SPARSE,
-    }
+
+def main():
+
+    # get data paths and model ckpt
+    args = argParser.parse_args()
+    arguments = {"conf": ""}
 
     # Set up the config
     config = set_config(args, arguments)
@@ -421,11 +426,6 @@ def main(SPARSE=None):
 
 if __name__ == "__main__":
 
-    """sparse_list = [i * 1e-3 for i in range(1, 16)]  # from 0.001 to 0.014
-    for SPARSE in sparse_list:
-        print(f"Running with SPARSE = {SPARSE}")
-        main(SPARSE)
-    """
     main()
 
 # command to run the script:
