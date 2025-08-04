@@ -41,6 +41,7 @@ def inference_pt(
     quant_type: torch.dtype = torch.float32,
 ) -> tuple[np.ndarray, np.ndarray]:
     imgs = samples["image"].to(device, non_blocking=(device.type == "cuda"))
+
     if use_gpu:
         torch.cuda.synchronize()
     with torch.no_grad():

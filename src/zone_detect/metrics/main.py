@@ -80,7 +80,7 @@ def set_config(args, arguments: dict[str, str]) -> Config:
 
     # set output paths
     someparam = "_" + str(config.get("sparse", 0.0))
-    if someparam == 0:
+    if someparam == 0.0:
         someparam = ""
 
     model_nickname = config["model_name"].split("-")[-1]
@@ -397,7 +397,7 @@ def main(SPARSE=None):
     # get data type
     ckpt: str = args.ckpt.lower()
 
-    if "irc" in ckpt and "rvb" not in ckpt and "rvb" not in ckpt:
+    if "irc" in ckpt or "ir-r-g" in ckpt and "rvb" not in ckpt and "rvb" not in ckpt:
         data_type = "IRC"
     elif "rvb" in ckpt or "rgb" in ckpt:
         data_type = "RVB"

@@ -110,7 +110,7 @@ def prepare_output(
         }
     )
 
-    output_type = config["effective_output_type"]
+    output_type = config.get("effective_output_type", "argmax")
 
     out_profile["count"] = 2 if output_type == "argmax" else config["n_classes"]
     # second band gives the max probability
