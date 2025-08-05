@@ -16,7 +16,7 @@ import rasterio
 import torch
 from pytorch_lightning.utilities.rank_zero import rank_zero_only  # type: ignore
 
-from src.zone_detect.test.tiles import get_stride
+from src.zone_detect.tiles import get_stride
 
 Config = dict[str, Any]  # type alias for configuration dictionary
 
@@ -155,6 +155,7 @@ def preprocess_config(config: Config) -> Config:
     # paths
     # check existence
     Path(config["output_path"]).mkdir(parents=True, exist_ok=True)
+    config["local_out"] = Path(config.get("local_out", config["output_path"]))
 
     input_path = config.get("input_img_path", "")
     if input_path != "":
@@ -192,6 +193,7 @@ def preprocess_config(config: Config) -> Config:
         "custom",
         "scaling",
     ], "Invalid normalization type: should be custom or scaling."
+    config["stride"] = get_stride(config)[0]
 
     # model
     weights_path = config.get("model_weights", "")

@@ -1,5 +1,9 @@
+import yaml
+import os
+
 from typing import Any
 import torch
+from safetensors.torch import save_file
 
 from src.zone_detect.metrics.metrics import sparsity
 from src.zone_detect.model import opti_pruna
@@ -11,21 +15,24 @@ def pt_optimize_model(
     """Optimize a PyTorch model for inference.
     Available optimizations are pruning, quantization and compilation."""
 
-    pruna_flag = config.get("pruna", False)
-    pruna_params = config.get("pruna_args", {})
+    opti_config = load_opti_config(config)
 
-    quant_precision = config.get("precision", "float32")
-    dtype = getattr(torch, quant_precision, torch.float32)
+    if opti_config.get("prune", False):
+        prune_params = opti_config.get("prune_args", {})
+        model = opti_pruning(model, prune_params, verbose)
 
-    compile_flag = config.get("compile", False)
+    if opti_config.get("quantize", False):
+        quant_method = opti_config.get("quantize_method", "pytorch")
+        quant_args = opti_config.get(f"{quant_method}_args", {})
 
-    if pruna_flag:
-        model = opti_pruning(model, pruna_params, verbose)
+        model = opti_quantization(model, quant_args, verbose)
 
-    if quant_precision != "float32" and torch.cuda.is_available():
-        model = opti_quantization(model, dtype, verbose)
+    # save model if switch in config
+    elif config.get("save_opti_model", False):
+        model_out_path = config.get("output_path", "") / "model.safetensors"
+        save_file(model.state_dict(), model_out_path)
 
-    if compile_flag:
+    if opti_config.get("compile", False):
         model = opti_compile(model, verbose)
 
     return model.eval()
@@ -45,13 +52,17 @@ def opti_pruning(
 
 
 def opti_quantization(
-    model: torch.nn.Module, dtype: torch.dtype, verbose: bool = False
+    model: torch.nn.Module, quant_args: dict, verbose: bool = False
 ) -> torch.nn.Module:
     """Apply quantization to the model."""
+
+    dtype = getattr(torch, quant_args.get("precision", "float32"), torch.float32)
 
     if verbose:
         print(f"Quantizing model to {dtype}...")
 
+    if dtype == torch.float32:
+        return model
     if dtype in (torch.bfloat16, torch.float16):
         # simple truncation
         model = model.to(dtype)
@@ -70,10 +81,21 @@ def opti_quantization(
 
         model.forward = new_forward
 
+        # save model if switch in config
+
     else:
-        # use torchao quantization
+        # dtype is real quantization, not 16 bit
+
+        method = quant_args.get("flag", "pytorch")
+        precision = quant_args.get("precision", "float32")
+
+        if method == "pytorch":
+            pass
+
+        # use provided quantization method
         # check precision and device compatibility
         # apply quantization
+        # save with specificities if switch in config
 
         print("Quantization not implemented for this dtype, this is a placeholder.")
         pass
@@ -91,3 +113,24 @@ def opti_compile(model: torch.nn.Module, verbose: bool = False):
     model.compile(mode="reduce-overhead")
 
     return model
+
+
+def load_opti_config(config: dict, verbose: bool = False) -> dict:
+    """Load the optimization configuration from a YAML file."""
+
+    opti_path = config.get("opti_config")
+
+    if not opti_path or not os.path.exists(opti_path):
+        if verbose:
+            print(f"Optimization config file not found -- falling back to default.")
+
+        opti_config = {
+            "compile": False,
+            "prune": False,
+            "quantize": False,
+        }
+    else:
+        with open(opti_path, "r") as f:
+            opti_config = yaml.safe_load(f)
+
+    return opti_config

@@ -35,6 +35,7 @@ from codecarbon import OfflineEmissionsTracker
 
 from src.zone_detect.inference import inference
 from src.zone_detect.main import Logger, prepare_data, prepare_model, prepare_output
+from src.zone_detect.metrics.create_dataset import interactive_dataset
 from src.zone_detect.metrics.metrics import add_confusion, process_metrics
 from src.zone_detect.stitching_job import stitching
 from src.zone_detect.utils import (
@@ -67,11 +68,20 @@ def set_config(args, arguments: dict[str, str]) -> Config:
     # truth_root: / + dpt + zone
     # truth_path : .tif
 
+    # get data type
+    data_type = get_datatype_from_ckpt(args.ckpt)
+    conf = f"src/zone_detect/metrics/configs/frozen_config_{data_type}.yaml"
+    arguments["conf"] = conf
+
     # load config file and set up device
     config, device, use_gpu = setup(arguments)
 
+    data = args.data
+    if not data:
+        data = interactive_dataset()
+
     # set paths
-    config["data_paths"] = args.data
+    config["data_paths"] = data
     config["model_weights"] = args.ckpt
 
     # set model
@@ -80,7 +90,7 @@ def set_config(args, arguments: dict[str, str]) -> Config:
 
     # set output paths
     someparam = "_" + str(config.get("sparse", 0.0))
-    if someparam == 0:
+    if someparam == 0.0:
         someparam = ""
 
     model_nickname = config["model_name"].split("-")[-1]
@@ -154,14 +164,13 @@ def run_pipeline(
 
     #### LOGGING
     # TODO: do not save log and make in-terminal log less bloated
-    log_filename = None
+    log_filename = local_out / Path(
+        f"{config['output_name']}_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.log",
+    )
     original_stdout = sys.stdout
     original_stderr = sys.stderr
 
     if save_logs:
-        log_filename = local_out / Path(
-            f"{config['output_name']}_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.log",
-        )
         sys.stdout = Logger(filename=str(log_filename))
         sys.stderr = sys.stdout
         print(f"    [LOGGER] Writing logs to: {log_filename}")
@@ -170,131 +179,132 @@ def run_pipeline(
             f"    [INFO] Running inference for {config['output_name']} (logs in terminal only)"
         )
 
-    log_filename = local_out / Path(
-        f"{config['output_name']}_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.log",
-    )
-
     #### SETUP
-    combi = gen_param_combination(config, False)[0]
-    img_pixels_detection = combi["img_pixels_detection"]
-    margin = combi["margin"]
-    padding = combi["padding"]
-    stride = combi["stride"]
-    stitch = combi["stitching"]
+    settings = gen_param_combination(config, True)
 
-    config.update(
-        {
-            "img_pixels_detection": img_pixels_detection,
-            "margin": margin,
-            "padding": padding,
-            "stride": stride,
-            "stitching": stitch,
-        }
-    )
+    for combi in settings:
 
-    method = f"size={img_pixels_detection}_stride={stride}_margin={margin}_padding={padding}_stitching={stitch}"
-    identifier = "_" + method
+        img_pixels_detection = combi["img_pixels_detection"]
+        margin = combi["margin"]
+        padding = combi["padding"]
+        stride = combi["stride"]
+        stitch = combi["stitching"]
 
-    # start timer
-    timer_data = datetime.datetime.now()
-
-    dataset, data_loader, sliced_dataframe, profile = prepare_data(config)
-    data_prep_time = (datetime.datetime.now() - timer_data).total_seconds() * 1000  # ms
-
-    single_area = sliced_dataframe["geometry"].area.sum()
-
-    # prepare output raster
-    np_predictions = prepare_np_output(profile, config, identifier)
-
-    out, path_out = prepare_output(
-        config,
-        profile,
-        identifier,
-    )
-
-    pure_infer_time = 0  # ms
-    data_write_time = 0  # ms
-
-    #### INFERENCE
-    print(f"""    [ ] starting inference...\n""")
-    for samples in tqdm(data_loader, ncols=75):
-
-        timer_start = datetime.datetime.now()
-
-        predictions, indices = inference(
-            model_type=model_type,
-            config=config,
-            args=model_args,
-            samples=samples,
+        config.update(
+            {
+                "img_pixels_detection": img_pixels_detection,
+                "margin": margin,
+                "padding": padding,
+                "stride": stride,
+                "stitching": stitch,
+            }
         )
 
-        pure_infer_time += (
-            datetime.datetime.now() - timer_start
+        method = f"size={img_pixels_detection}_stride={stride}_margin={margin}_padding={padding}_stitching={stitch}"
+        identifier = "_" + method
+
+        # start timer
+        timer_data = datetime.datetime.now()
+
+        dataset, data_loader, sliced_dataframe, profile = prepare_data(config)
+        data_prep_time = (
+            datetime.datetime.now() - timer_data
         ).total_seconds() * 1000  # ms
 
-        # writing windowed raster to output raster
-        timer_write = datetime.datetime.now()
+        single_area = sliced_dataframe["geometry"].area.sum()
 
-        for prediction, index in zip(predictions, indices):
+        # prepare output raster
+        np_predictions = prepare_np_output(profile, config, identifier)
 
-            # stitching method is handled inside
-            prediction, window = stitching(
-                combi,
-                sliced_dataframe,
-                prediction,
-                index,
-                out,
-                output_type=output_type,
+        out, path_out = prepare_output(
+            config,
+            profile,
+            identifier,
+        )
+
+        pure_infer_time = 0  # ms
+        data_write_time = 0  # ms
+
+        #### INFERENCE
+        print(f"""    [ ] starting inference...\n""")
+        for samples in tqdm(data_loader, ncols=75):
+
+            timer_start = datetime.datetime.now()
+
+            predictions, indices = inference(
+                model_type=model_type,
+                config=config,
+                args=model_args,
+                samples=samples,
             )
-            # write
-            if output_type == "argmax":
-                out.write_band([1, 2], prediction, window=window)
-            else:
-                out.write_band(
-                    [i for i in range(1, n_classes + 1)],
-                    prediction,
-                    window=window,
-                )
-            data_write_time += (
-                datetime.datetime.now() - timer_write
+
+            pure_infer_time += (
+                datetime.datetime.now() - timer_start
             ).total_seconds() * 1000  # ms
 
-    out.close()
-    dataset.close_raster()  # type: ignore
+            # writing windowed raster to output raster
+            timer_write = datetime.datetime.now()
 
-    #### METRICS
-    # add confusion matrix for metrics
-    metrics_matrix = add_confusion(
-        Path(path_out),
-        config["truth_path"],
-        metrics_matrix,
-        n_classes,
-        stride,
-    )
+            for prediction, index in zip(predictions, indices):
 
-    # end of processing
-    ### timing
-    total_time = (datetime.datetime.now() - timer_data).total_seconds() * 1000  # ms
-    # time metrics structured as follows:
-    single_times_area = {
-        "data_prep_time": data_prep_time,
-        "pure_infer_time": pure_infer_time,
-        "data_write_time": data_write_time,
-        "total_time": total_time,
-        "patches": len(sliced_dataframe),
-        "area": single_area,
-    }
+                # stitching method is handled inside
+                prediction, window = stitching(
+                    combi,
+                    sliced_dataframe,
+                    prediction,
+                    index,
+                    out,
+                    output_type=output_type,
+                )
+                # write
+                if output_type == "argmax":
+                    out.write_band([1, 2], prediction, window=window)
+                else:
+                    out.write_band(
+                        [i for i in range(1, n_classes + 1)],
+                        prediction,
+                        window=window,
+                    )
+                data_write_time += (
+                    datetime.datetime.now() - timer_write
+                ).total_seconds() * 1000  # ms
 
-    # append metrics to dataframe
-    metrics_df = pd.concat(
-        [metrics_df, pd.DataFrame([single_times_area])], ignore_index=True
-    )
+        out.close()
+        dataset.close_raster()  # type: ignore
+
+        #### METRICS
+        # add confusion matrix for metrics
+        metrics_matrix = add_confusion(
+            Path(path_out),
+            config["truth_path"],
+            metrics_matrix,
+            n_classes,
+            stride,
+        )
+
+        # end of processing
+        ### timing
+        total_time = (datetime.datetime.now() - timer_data).total_seconds() * 1000  # ms
+        # time metrics structured as follows:
+        single_times_area = {
+            "data_prep_time": data_prep_time,
+            "pure_infer_time": pure_infer_time,
+            "data_write_time": data_write_time,
+            "total_time": total_time,
+            "patches": len(sliced_dataframe),
+            "area": single_area,
+        }
+
+        # append metrics to dataframe
+        metrics_df = pd.concat(
+            [metrics_df, pd.DataFrame([single_times_area])], ignore_index=True
+        )
+
+        # delete inference image and log file (should be able to just not save them at all)
+        os.remove(path_out)
 
     sys.stdout = original_stdout
     sys.stderr = original_stderr
-
-    # delete inference image and log file (should be able to just not save them at all)
-    os.remove(path_out)
 
     return metrics_df, metrics_matrix
 
@@ -386,29 +396,29 @@ def batch_pipeline(config: Config) -> None:
     print(f"Metrics saved to {out}")
 
 
-def main(SPARSE=None):
-
-    # get data paths and model ckpt
-    args = argParser.parse_args()
-
-    # get data type
-    ckpt: str = args.ckpt.lower()
-
-    if "irc" in ckpt and "rvb" not in ckpt and "rvb" not in ckpt:
-        data_type = "IRC"
+def get_datatype_from_ckpt(ckpt: str) -> str:
+    """Extracts the data type from the checkpoint name."""
+    print(
+        "[!] Make sure the checkpoint name contains the data type, that is 'IRC' or 'RVB'."
+    )
+    ckpt = ckpt.lower()
+    if "irc" in ckpt or "ir-r-g" in ckpt and "rvb" not in ckpt and "rvb" not in ckpt:
+        return "IRC"
     elif "rvb" in ckpt or "rgb" in ckpt:
-        data_type = "RVB"
+        return "RVB"
     else:
         print(
             "WARNING: No data type found in the checkpoint name, defaulting to IRC. "
             "Please ensure the checkpoint name contains 'IRC' or 'RVB'."
         )
-        data_type = "IRC"
+        return "IRC"
 
-    arguments = {
-        "conf": f"src/zone_detect/metrics/configs/frozen_config_{data_type}.yaml",
-        "sparse": SPARSE,
-    }
+
+def main():
+
+    # get data paths and model ckpt
+    args = argParser.parse_args()
+    arguments = {"conf": ""}
 
     # Set up the config
     config = set_config(args, arguments)
@@ -418,11 +428,6 @@ def main(SPARSE=None):
 
 if __name__ == "__main__":
 
-    """sparse_list = [i * 1e-3 for i in range(1, 16)]  # from 0.001 to 0.014
-    for SPARSE in sparse_list:
-        print(f"Running with SPARSE = {SPARSE}")
-        main(SPARSE)
-    """
     main()
 
 # command to run the script:

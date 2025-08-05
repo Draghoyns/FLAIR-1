@@ -5,6 +5,7 @@ import torch
 from typing import Any
 
 import onnxruntime as ort
+import tqdm
 
 
 def inference(
@@ -40,6 +41,7 @@ def inference_pt(
     quant_type: torch.dtype = torch.float32,
 ) -> tuple[np.ndarray, np.ndarray]:
     imgs = samples["image"].to(device, non_blocking=(device.type == "cuda"))
+
     if use_gpu:
         torch.cuda.synchronize()
     with torch.no_grad():
@@ -98,7 +100,7 @@ def warmup(
     )
     samples = {"image": torch.randn(*size), "index": torch.tensor([0])}
 
-    for _ in range(10):
+    for _ in tqdm.trange(10, desc="Warming up model"):
         _ = inference(
             model_type=model_type,
             config=config,
