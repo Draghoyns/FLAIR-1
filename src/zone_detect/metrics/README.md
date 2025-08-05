@@ -2,6 +2,18 @@
 
 This module provides tools for evaluating and analyzing results using `metrics/main.py`.
 
+## Installation
+
+The latest configuration that worked with all necessary dependencies was created as follows:
+  ```bash
+    conda create -n flair python=3.11
+    conda activate flair
+
+    cd FLAIR-1
+    pip install -e .
+    pip install -r src/zone_detect/metrics/requirements.txt
+  ```
+
 ## Usage
 
 1. **Prepare dataset:**
@@ -19,12 +31,15 @@ If needed, `create_dataset_paths.py` provides a way to create the csv from the i
     python FLAIR-1/src/zone_detect/metrics/main.py --data=<path_to_csv> --ckpt=<path_to_ckpt>
     ```
 
-    Replace `<path_to_csv>` and `<path_to_ckpt>` with the actual paths.
+Replace `<path_to_csv>` and `<path_to_ckpt>` with the actual paths.
+
+If you decided to skip step 1 and don't give a `data` argument, you will follow a step-by-step guide to create the dataset and then run the script.
 
 ## Arguments
 
-- `--data`: Path to your dataset.csv (required)
+- `--data`: Path to your dataset.csv
 - `--ckpt`: Path to the model chekpoints (required) (only support swin-upernet for now)
+
 - Additional options may be available; run:
   ```bash
   python main.py --help
@@ -39,8 +54,8 @@ python main.py --data=data_paths.csv --ckpt=SwinUpernet_Small.ckpt
 
 ## Requirements
 
-- Python 3.x
-- Any dependencies listed in `detect_requirements.txt` (if available).
+- Python 3.x (3.11 is advised, no guarantees on dependencies if you use other versions)
+- Any dependencies listed in `requirements.txt` (if available).
 
 ## Notes
 

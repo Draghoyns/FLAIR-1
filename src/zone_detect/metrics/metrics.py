@@ -4,7 +4,10 @@ import json
 import os
 import psutil
 from tqdm import tqdm
-import wandb
+
+import lazy_import
+
+wandb = lazy_import.lazy_module("wandb")
 
 from pathlib import Path
 from typing import Any
