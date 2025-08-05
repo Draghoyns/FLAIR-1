@@ -1,9 +1,6 @@
 #### OUTPUT
-output_path: /media/DATA/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out20250711 #.
+output_path: ./0testing_saves/out20250804
 output_type: argmax # prediction type
-
-#### INPUT
-data_type: IRC # IR, IRC, RVB, RVBI, RVBIE
 
 #### PARAMETERS
 channels: [1, 2, 3, ] 
@@ -26,13 +23,17 @@ batch_size:  2 # for DataLoader
 use_gpu: true 
 num_worker: 8
 
-
-#### OPTIMIZATION SWITCHES
-pruna : true
-onnx: false # if true, use onnx model, else use pytorch model
+#### SAVING AND LOGGING
 log_verbose: false
 save_logs: false # if true, save logs in output_path
-precision : int8
+save_inference: true # save inference results
+
+#### OPTIMIZATION SWITCHES
+pruna : false
+precision : float32
+onnx: false # if true, use onnx model, else use pytorch model
+opti_config: ./configs/opti_config.yaml # path to optimization method config file
+save_opti_model: False
 
 #### NORMALIZATION
 norma_task:
@@ -51,7 +52,6 @@ strategies:
     enabled: True
     size_range : [512] # replaces img_pixels_detection
     stride_range : [0.75] # percentage of the tile size - should be related to margin if stitching requires clipping
-    #shapes : [] # square by default
 
   stitching : # overlap is determined by tiling
     enabled : True
