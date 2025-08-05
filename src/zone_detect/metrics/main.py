@@ -315,10 +315,7 @@ def batch_pipeline(config: Config) -> None:
 
     path_df = load_csv(config["data_paths"])
 
-    # saving inference switch
-    save = True
-
-    # initialize metrics related variables for aggragation
+    # initialize metrics related variables for aggregation
     n_classes = config["n_classes"]
     metrics_matrix = np.zeros((n_classes, n_classes))
 
@@ -429,6 +426,7 @@ if __name__ == "__main__":
     main()
 
 # command to run the script:
+# update this depending on the paths wanted
 
 #### SWIN
 # python src/zone_detect/metrics/main.py --data=0testing_saves/data_paths_IRC.csv --ckpt=/media/DATA/INFERENCE_HS/MODELS_IA/FLAIR1/swin-upernet-small_IRV_SET1/checkpoints/ckpt-epoch=84-val_loss=0.37_00_HF_SwinUpernet_Small_IR-R-G_set1.ckpt
