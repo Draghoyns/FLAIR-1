@@ -39,6 +39,7 @@ from src.zone_detect.metrics.create_dataset import interactive_dataset
 from src.zone_detect.metrics.metrics import add_confusion, process_metrics
 from src.zone_detect.stitching_job import stitching
 from src.zone_detect.utils import (
+    extract_method,
     gen_param_combination,
     setup,
     setup_out_path,
@@ -90,7 +91,7 @@ def set_config(args, arguments: dict[str, str]) -> Config:
 
     # set output paths
     someparam = "_" + str(config.get("sparse", 0.0))
-    if someparam == 0.0:
+    if someparam == "_0.0":
         someparam = ""
 
     model_nickname = config["model_name"].split("-")[-1]
@@ -146,49 +147,36 @@ def prepare_np_output(profile: dict, config: Config, identifier: str) -> np.ndar
     return image_predictions
 
 
-def run_pipeline(
-    config: Config, metrics_df: pd.DataFrame, metrics_matrix: np.ndarray
-) -> tuple[pd.DataFrame, np.ndarray]:
-    """Works for a single input image"""
+def single_run_pipeline(
+    param_combi: dict[str, Any],
+    config: Config,
+    metrics_df: pd.DataFrame,
+    confmat_dict: dict[str, np.ndarray],
+) -> tuple[pd.DataFrame, dict[str, np.ndarray]]:
+    """Runs the inference pipeline for a single parameter combination on one image.
+    Args:
+        param_combi (dict): Dictionary containing the specific method parameters for the inference.
+        config (Config): Configuration dictionary.
+        metrics_df (pd.DataFrame): DataFrame to store metrics (global, indexed by method).
+        confmat_dict (dict[str, np.ndarray]): Confusion matrix for metrics (specific to one method).
+    Returns:
+        tuple: Updated metrics DataFrame and confusion matrix.
+    """
+    timings = {}
 
-    # set up common output path
-    config = setup_out_path(config)
+    img_pixels_detection = param_combi["img_pixels_detection"]
+    margin = param_combi["margin"]
+    padding = param_combi["padding"]
+    stride = param_combi["stride"]
+    stitch = param_combi["stitching"]
 
-    # extracting config parameters
     output_type = config["output_type"]
     n_classes = config["n_classes"]
     local_out = Path(config["local_out"])
     model_type = config.get("model_type", "pytorch")
     model_args = config.get("model_args", dict())
-    save_logs = config.get("save_logs", False)
 
-    #### LOGGING
-    # TODO: do not save log and make in-terminal log less bloated
-    log_filename = local_out / Path(
-        f"{config['output_name']}_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.log",
-    )
-    original_stdout = sys.stdout
-    original_stderr = sys.stderr
-
-    if save_logs:
-        sys.stdout = Logger(filename=str(log_filename))
-        sys.stderr = sys.stdout
-        print(f"    [LOGGER] Writing logs to: {log_filename}")
-    else:
-        print(
-            f"    [INFO] Running inference for {config['output_name']} (logs in terminal only)"
-        )
-
-    #### SETUP
-    settings = gen_param_combination(config, True)
-
-    for combi in settings:
-
-        img_pixels_detection = combi["img_pixels_detection"]
-        margin = combi["margin"]
-        padding = combi["padding"]
-        stride = combi["stride"]
-        stitch = combi["stitching"]
+    effective_output_type = output_type if stitch == "exact-clipping" else "class_prob"
 
         config.update(
             {
@@ -303,10 +291,54 @@ def run_pipeline(
         # delete inference image and log file (should be able to just not save them at all)
         os.remove(path_out)
 
+    return metrics_df, confmat_dict
+
+
+def run_pipeline(
+    config: Config, metrics_df: pd.DataFrame, confmat_dict: dict[str, np.ndarray]
+) -> tuple[pd.DataFrame, dict[str, np.ndarray]]:
+    """Works for a single input image"""
+
+    # set up common output path
+    config = setup_out_path(config)
+
+    # extracting config parameters
+    local_out = Path(config["local_out"])
+    save_logs = config.get("save_logs", False)
+
+    #### LOGGING
+    # TODO: do not save log and make in-terminal log less bloated
+    log_filename = local_out / Path(
+        f"{config['output_name']}_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.log",
+    )
+    original_stdout = sys.stdout
+    original_stderr = sys.stderr
+
+    if save_logs:
+        sys.stdout = Logger(filename=str(log_filename))
+        sys.stderr = sys.stdout
+        print(f"    [LOGGER] Writing logs to: {log_filename}")
+    else:
+        print(
+            f"    [INFO] Running inference for {config['output_name']} (logs in terminal only)"
+        )
+
+    #### SETUP
+    settings = gen_param_combination(config, True)
+
+    for combi in settings:
+
+        metrics_df, confmat_dict = single_run_pipeline(
+            param_combi=combi,
+            config=config,
+            metrics_df=metrics_df,
+            confmat_dict=confmat_dict,
+        )
+
     sys.stdout = original_stdout
     sys.stderr = original_stderr
 
-    return metrics_df, metrics_matrix
+    return metrics_df, confmat_dict
 
 
 def batch_pipeline(config: Config) -> None:
@@ -326,8 +358,7 @@ def batch_pipeline(config: Config) -> None:
     path_df = load_csv(config["data_paths"])
 
     # initialize metrics related variables for aggregation
-    n_classes = config["n_classes"]
-    metrics_matrix = np.zeros((n_classes, n_classes))
+    confmat_dict = {}
 
     csv_path = os.path.join(
         config["output_path"], "metrics.csv"
@@ -341,6 +372,7 @@ def batch_pipeline(config: Config) -> None:
             "total_time",
             "patches",
             "area",
+            "method",
         ]
     )
 
@@ -357,37 +389,39 @@ def batch_pipeline(config: Config) -> None:
         )
 
         # __________INFERENCE__________#
-        metrics_df, metrics_matrix = run_pipeline(
-            config, metrics_df=metrics_df, metrics_matrix=metrics_matrix
+        metrics_df, confmat_dict = run_pipeline(
+            config, metrics_df=metrics_df, confmat_dict=confmat_dict
         )
 
     out_json = config.get("metrics_out", "metrics.json")
     out = Path(out_json).with_suffix(".json")
 
-    nb_patches = metrics_df["patches"].to_list()
-    times = metrics_df.to_dict(orient="list")
-
-    info = {
-        "patch_size": config["img_pixels_detection"],
-        "stride": config["stride"],
-        "margin": config["margin"],
-        "padding": config["padding"],
-        "stitching": config["stitching"],
-    }
-
     emissions = tracker.stop()
     if emissions is None:
         emissions = 0.0
 
-    metrics_file = process_metrics(
-        confmat=metrics_matrix,
-        config=config,
-        info=info,
-        method_times=times,
-        method_patches=nb_patches,
-        area=metrics_df["area"].sum(),
-        carbon=emissions,
-    )
+    metrics_file = []
+
+    for method, metrics_matrix in confmat_dict.items():
+
+        info = extract_method(method)
+        method_df = metrics_df.query(f"method == '{method}'")
+        nb_patches = method_df["patches"].to_list()
+        times = method_df[
+            ["data_prep_time", "pure_infer_time", "data_write_time", "total_time"]
+        ].to_dict(orient="list")
+
+        metrics_file.append(
+            process_metrics(
+                confmat=metrics_matrix,
+                config=config,
+                info=info,
+                method_times=times,
+                method_patches=nb_patches,
+                area=method_df["area"].sum(),
+                carbon=emissions,
+            )
+        )
 
     # save the metrics to a json file
     with open(out, "w") as f:
@@ -399,7 +433,7 @@ def batch_pipeline(config: Config) -> None:
 def get_datatype_from_ckpt(ckpt: str) -> str:
     """Extracts the data type from the checkpoint name."""
     print(
-        "[!] Make sure the checkpoint name contains the data type, that is 'IRC' or 'RVB'."
+        "\n[!] Make sure the checkpoint name contains the data type, that is 'IRC' or 'RVB'."
     )
     ckpt = ckpt.lower()
     if "irc" in ckpt or "ir-r-g" in ckpt and "rvb" not in ckpt and "rvb" not in ckpt:
@@ -440,3 +474,5 @@ if __name__ == "__main__":
 # python src/zone_detect/metrics/main.py --data=0testing_saves/data_paths_RVB.csv --ckpt=/media/DATA/INFERENCE_HS/MODELS_IA/FLAIR1/unet_resnet/FLAIR-INC_rgb_15cl_resnet34-unet_weights.pth
 
 # python src/zone_detect/metrics/main.py --data=0testing_saves/data_paths_IRC.csv --ckpt=/
+
+# /var/tmp/shys/INFERENCE_HS/MODELS_IA/FLAIR1/swin-upernet-small_IRV_SET1/checkpoints/ckpt-epoch=84-val_loss=0.37_00_HF_SwinUpernet_Small_IR-R-G_set1.ckpt
