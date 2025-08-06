@@ -33,7 +33,7 @@ If needed, `create_dataset_paths.py` provides a way to create the csv from the i
 
 Replace `<path_to_csv>` and `<path_to_ckpt>` with the actual paths.
 
-If you decided to skip step 1 and don't give a `data` argument, you will follow a step-by-step guide to create the dataset and then run the script.
+If you decided to skip step 1 and don't give a `--data` argument, you will follow a step-by-step guide to create the dataset and then run the script.
 
 ## Arguments
 
@@ -59,9 +59,10 @@ python main.py --data=data_paths.csv --ckpt=SwinUpernet_Small.ckpt
 
 ## Notes
 
-- Ensure the input dataset matches the expected structure.
+- Ensure the input dataset matches the expected structure. You can always create a new one with by providing no `--data` in the command.
 - For more details, refer to the code in `main.py`.
-- For custom parameters, you can manually change `frozen_config.yaml`
+- For custom parameters, you can manually change `frozen_config_***.yaml`
+- If multiple options are provided as a list in the config parameters (e.g. `img_size_detection`), the script will automatically run for all possible combination of parameters ad stack the related metrics per combination.
 
 ## TODO
 
