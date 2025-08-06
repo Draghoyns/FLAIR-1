@@ -43,6 +43,7 @@ from src.zone_detect.utils import (
     gen_param_combination,
     setup,
     setup_out_path,
+    timer,
 )
 
 Config = dict[str, Any]
@@ -172,124 +173,132 @@ def single_run_pipeline(
 
     output_type = config["output_type"]
     n_classes = config["n_classes"]
-    local_out = Path(config["local_out"])
     model_type = config.get("model_type", "pytorch")
     model_args = config.get("model_args", dict())
 
     effective_output_type = output_type if stitch == "exact-clipping" else "class_prob"
 
-        config.update(
-            {
-                "img_pixels_detection": img_pixels_detection,
-                "margin": margin,
-                "padding": padding,
-                "stride": stride,
-                "stitching": stitch,
-            }
+    config.update(
+        {
+            "img_pixels_detection": img_pixels_detection,
+            "margin": margin,
+            "padding": padding,
+            "stride": stride,
+            "stitching": stitch,
+            "effective_output_type": effective_output_type,
+        }
+    )
+
+    method = f"size={img_pixels_detection}_stride={stride}_margin={margin}_padding={padding}_stitching={stitch}"
+    identifier = "_" + method
+
+    # start timer
+    method_start = datetime.datetime.now()
+
+    timed_prepare_data = timer(timings)(prepare_data)
+
+    dataset, data_loader, sliced_dataframe, profile = timed_prepare_data(config)
+
+    data_prep_time = timings["prepare_data"]
+
+    single_area = sliced_dataframe["geometry"].area.sum()
+
+    # prepare output raster
+    np_predictions = prepare_np_output(profile, config, identifier)
+
+    out, path_out = prepare_output(
+        config,
+        profile,
+        identifier,
+    )
+
+    pure_infer_time = 0  # ms
+    data_write_time = 0  # ms
+
+    timed_inference = timer(timings)(inference)
+
+    #### INFERENCE
+    print(f"""    [ ] starting inference...\n""")
+    for samples in tqdm(data_loader, ncols=75):
+
+        predictions, indices = timed_inference(
+            model_type=model_type,
+            config=config,
+            args=model_args,
+            samples=samples,
         )
 
-        method = f"size={img_pixels_detection}_stride={stride}_margin={margin}_padding={padding}_stitching={stitch}"
-        identifier = "_" + method
+        pure_infer_time += timings["inference"]
 
-        # start timer
-        timer_data = datetime.datetime.now()
+        # writing windowed raster to output raster
+        timer_write = datetime.datetime.now()
 
-        dataset, data_loader, sliced_dataframe, profile = prepare_data(config)
-        data_prep_time = (
-            datetime.datetime.now() - timer_data
-        ).total_seconds() * 1000  # ms
+        for prediction, index in zip(predictions, indices):
 
-        single_area = sliced_dataframe["geometry"].area.sum()
-
-        # prepare output raster
-        np_predictions = prepare_np_output(profile, config, identifier)
-
-        out, path_out = prepare_output(
-            config,
-            profile,
-            identifier,
-        )
-
-        pure_infer_time = 0  # ms
-        data_write_time = 0  # ms
-
-        #### INFERENCE
-        print(f"""    [ ] starting inference...\n""")
-        for samples in tqdm(data_loader, ncols=75):
-
-            timer_start = datetime.datetime.now()
-
-            predictions, indices = inference(
-                model_type=model_type,
-                config=config,
-                args=model_args,
-                samples=samples,
+            # stitching method is handled inside
+            prediction, window = stitching(
+                param_combi,
+                sliced_dataframe,
+                prediction,
+                index,
+                out,
+                config["effective_output_type"],
             )
 
-            pure_infer_time += (
-                datetime.datetime.now() - timer_start
+            prediction_to_write = prediction.copy()
+            prediction_to_write[1:] = prediction[1:] * 65535
+            prediction_to_write = prediction_to_write.astype("uint16")
+
+            # write
+            if output_type == "argmax":
+                out.write_band([1, 2], prediction_to_write, window=window)
+            else:
+                out.write_band(
+                    [i for i in range(1, n_classes + 1)],
+                    prediction_to_write,
+                    window=window,
+                )
+            data_write_time += (
+                datetime.datetime.now() - timer_write
             ).total_seconds() * 1000  # ms
 
-            # writing windowed raster to output raster
-            timer_write = datetime.datetime.now()
+    out.close()
+    dataset.close_raster()  # type: ignore
 
-            for prediction, index in zip(predictions, indices):
+    #### METRICS
+    # add confusion matrix for metrics
+    metrics_matrix = confmat_dict.get(method, np.zeros((n_classes, n_classes)))
+    metrics_matrix = add_confusion(
+        Path(path_out),
+        config["truth_path"],
+        metrics_matrix,
+        n_classes,
+        stride,
+    )
+    confmat_dict.update({method: metrics_matrix})
 
-                # stitching method is handled inside
-                prediction, window = stitching(
-                    combi,
-                    sliced_dataframe,
-                    prediction,
-                    index,
-                    out,
-                    output_type=output_type,
-                )
-                # write
-                if output_type == "argmax":
-                    out.write_band([1, 2], prediction, window=window)
-                else:
-                    out.write_band(
-                        [i for i in range(1, n_classes + 1)],
-                        prediction,
-                        window=window,
-                    )
-                data_write_time += (
-                    datetime.datetime.now() - timer_write
-                ).total_seconds() * 1000  # ms
+    # end of processing
+    ### timing
+    total_time = (datetime.datetime.now() - method_start).total_seconds() * 1000  # ms
 
-        out.close()
-        dataset.close_raster()  # type: ignore
+    # time metrics structured as follows:
+    single_times_area = {
+        "data_prep_time": data_prep_time,
+        "pure_infer_time": pure_infer_time,
+        "data_write_time": data_write_time,
+        "total_time": total_time,
+        "patches": len(sliced_dataframe),
+        "area": single_area,
+        "method": method,
+    }
 
-        #### METRICS
-        # add confusion matrix for metrics
-        metrics_matrix = add_confusion(
-            Path(path_out),
-            config["truth_path"],
-            metrics_matrix,
-            n_classes,
-            stride,
-        )
+    # append metrics to dataframe
+    metrics_df = pd.concat(
+        [metrics_df, pd.DataFrame([single_times_area])], ignore_index=True
+    )
 
-        # end of processing
-        ### timing
-        total_time = (datetime.datetime.now() - timer_data).total_seconds() * 1000  # ms
-        # time metrics structured as follows:
-        single_times_area = {
-            "data_prep_time": data_prep_time,
-            "pure_infer_time": pure_infer_time,
-            "data_write_time": data_write_time,
-            "total_time": total_time,
-            "patches": len(sliced_dataframe),
-            "area": single_area,
-        }
-
-        # append metrics to dataframe
-        metrics_df = pd.concat(
-            [metrics_df, pd.DataFrame([single_times_area])], ignore_index=True
-        )
-
-        # delete inference image and log file (should be able to just not save them at all)
-        os.remove(path_out)
+    # delete inference image and log file (should be able to just not save them at all)
+    os.remove(path_out)
 
     return metrics_df, confmat_dict
 
