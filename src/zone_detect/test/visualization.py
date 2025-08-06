@@ -5,7 +5,7 @@ from matplotlib.patches import Rectangle
 import matplotlib.pyplot as plt
 
 from src.zone_detect.slicing_job import slice_pixels
-from src.zone_detect.tiles import total_weights
+from src.zone_detect.slicing_utils import total_weights
 
 
 def viz_slicing(img_size: tuple[int, int], patches: set | list) -> None:

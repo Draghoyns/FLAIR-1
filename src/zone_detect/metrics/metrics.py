@@ -7,6 +7,8 @@ from tqdm import tqdm
 
 import lazy_import
 
+from src.zone_detect.slicing_utils import nb_patches
+
 wandb = lazy_import.lazy_module("wandb")
 
 from pathlib import Path
@@ -26,7 +28,7 @@ from src.zone_detect.model import (
     load_model,
     load_model_from_cfg_path,
 )
-from src.zone_detect.slicing_job import slice_pixels, nb_patches
+from src.zone_detect.slicing_job import slice_pixels
 from src.zone_detect.utils import extract_method, info_extract
 
 Config = dict[str, Any]  # type alias for configuration dictionary

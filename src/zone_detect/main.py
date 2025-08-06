@@ -110,9 +110,7 @@ def run_pipeline(config: Config) -> None:
         stride = combi["stride"]
         stitch = combi["stitching"]
 
-        effective_output_type = (
-            output_type if stitch == "exact-clipping" else "class_prob"
-        )
+        effective_output_type = (output_type if stitch == "exact-clipping" else "class_prob")
 
         config.update(
             {
@@ -131,7 +129,6 @@ def run_pipeline(config: Config) -> None:
         method_start = datetime.datetime.now()
 
         timed_prepare_data = timer(timings)(prepare_data)
-        # timer_data = datetime.datetime.now()
 
         dataset, data_loader, sliced_dataframe, profile = timed_prepare_data(config)
         # data_prep_time = ( datetime.datetime.now() - timer_data).total_seconds() * 1000  # ms

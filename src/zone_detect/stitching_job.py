@@ -9,13 +9,12 @@ from rasterio.io import DatasetWriter
 from rasterio.windows import Window
 
 from src.zone_detect.dataset import convert
-from src.zone_detect.slicing_job import create_polygon_from_bounds
-
-from src.zone_detect.tiles import (
+from src.zone_detect.slicing_utils import (
     geo_patch_overlap,
     patch_weights,
     total_weights,
     out_of_bounds,
+    create_polygon_from_bounds,
 )
 
 

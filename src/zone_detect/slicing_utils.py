@@ -1,6 +1,19 @@
 from typing import Any
-
 import numpy as np
+from shapely import Polygon
+from shapely.geometry import box, mapping
+
+
+def create_box_from_bounds(
+    x_min: float, x_max: float, y_min: float, y_max: float
+) -> Polygon:
+    return box(x_min, y_max, x_max, y_min)
+
+
+def create_polygon_from_bounds(
+    x_min: float, x_max: float, y_min: float, y_max: float
+) -> dict:
+    return mapping(box(x_min, y_max, x_max, y_min))
 
 
 def get_stride(config: dict[str, Any]) -> list[int]:
@@ -51,6 +64,32 @@ def get_tile_coord(
             coords.append(tile_start)
 
     return coords
+
+
+def nb_patches(
+    img_size: tuple[int, int],
+    stride: int,
+) -> int:
+    """
+    Calculate the number of patches for a given image size.
+    Lightweight version of slice_pixels that does not generate patches.
+    """
+
+    x_size, y_size = img_size
+
+    # Calculate the number of patches in each dimension
+    inexact_border_x = int(x_size % stride != 0)
+    inexact_border_y = int(y_size % stride != 0)
+
+    num_patches_x = x_size // stride + inexact_border_x
+    num_patches_y = y_size // stride + inexact_border_y
+
+    total_patches = num_patches_x * num_patches_y
+    if inexact_border_x and inexact_border_y:
+        # get rid of the last overlapping patch
+        total_patches = total_patches - 1
+
+    return total_patches
 
 
 def patch_overlap(

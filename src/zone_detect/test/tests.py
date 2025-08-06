@@ -11,7 +11,7 @@ import pandas as pd
 import rasterio
 
 from src.zone_detect.metrics.metrics import *
-from src.zone_detect.tiles import get_stride
+from src.zone_detect.slicing_utils import get_stride
 from src.zone_detect.utils import info_extract
 
 
@@ -126,7 +126,7 @@ def test_error_rate_patch(
         plt.figure(figsize=(10, 10))
         plt.axis("off")
         plt.imshow(
-            out_array, cmap="plasma", interpolation="nearest", vmin=vmin, vmax=vmax
+            out_array, cmap="plasma", interpolation="nearest", vmin=vmin, vmax=vmax  # type: ignore
         )
         plt.colorbar()
         plt.title("Error Rate for method : \n" + full_method)
