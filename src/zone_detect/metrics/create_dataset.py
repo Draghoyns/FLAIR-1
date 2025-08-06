@@ -22,11 +22,22 @@ def create_data(input_dir: str, truth_dir: str, data_type: str):
     input_files = [f for f in input_dir_path.rglob(f"*{data_type}.tif") if f.is_file()]
     truth_files = [f for f in truth_dir_path.rglob("*.tif") if f.is_file()]
 
+    print(f"Found {len(input_files)} input files and {len(truth_files)} truth files.")
+
     def extract_parts(stem):
         # assume stem is like "dpt_year_zone_modifier" or "dpt_year-zone-modifier"
-        match = re.search(r"(\d{3})[_-]?(\d{4})[_-]?([A-Za-z0-9_]+)", stem)
+        # zone: 2 letters + underscore + letters/numbers/underscores ending with number
+        # identifier: starts with letter + letters/numbers/underscores
+        match = re.search(
+            r"(\d{3})[_-]?(\d{4})[_-]?([A-Z]{2}_[A-Za-z0-9_]*\d)[_-]([A-Za-z][A-Za-z0-9_]*)",
+            stem,
+        )
         if match:
-            return match.groups()
+            dept, year, zone, identifier = match.groups()
+            print(
+                f"Extracted parts from {stem}: dept={dept}, year={year}, zone={zone}, identifier={identifier}"
+            )
+            return (dept, year, zone)  # Only return dept, year, zone for matching
         return None
 
     # Build dictionaries keyed by (dept, year, zone)
@@ -72,14 +83,14 @@ def create_data(input_dir: str, truth_dir: str, data_type: str):
 def interactive_dataset() -> str:
     """Interactive function to get dataset paths from user input."""
 
-    print("You did not provide a dataset paths file, let's create one together !\n")
+    print("\nYou did not provide a dataset paths file, let's create one together !\n")
 
-    input_dir = input("\nWhat is the input data main folder: ")
+    input_dir = input("\nWhat is the input data main folder ? ")
     input_dir = input_dir.strip()
     if not os.path.isdir(input_dir):
         raise ValueError(f"Input directory {input_dir} does not exist.")
 
-    truth_dir = input("\nWhat is the ground truth main folder: ")
+    truth_dir = input("\nWhat is the ground truth main folder ? ")
     truth_dir = truth_dir.strip()
     if not os.path.isdir(truth_dir):
         raise ValueError(f"Truth directory {truth_dir} does not exist.")
@@ -93,7 +104,7 @@ def interactive_dataset() -> str:
     print(f"\nCreating dataset for {data_type} data...")
     df = create_data(input_dir, truth_dir, data_type)
     df.to_csv(f"data_paths_{data_type}.csv", index=False)
-    print(f"Data paths saved to data_paths_{data_type}.csv")
+    print(f"Data paths saved to data_paths_{data_type}.csv\n")
 
     return f"data_paths_{data_type}.csv"
 
