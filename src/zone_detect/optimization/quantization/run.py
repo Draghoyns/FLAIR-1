@@ -9,13 +9,17 @@ from src.zone_detect.utils import Logger, setup
 
 def get_configs():
     """Load and return the configurations for methods and pipeline.
-    The configurations are loaded from YAML files in th e'configs' folder, the paths are hardcoded.
+    The configurations are loaded from YAML files in the 'configs' folder, the paths are hardcoded.
     """
-    methods_cfg_path = "src/zone_detect/quantization/configs/methods_config.yaml"
+    methods_cfg_path = (
+        "src/zone_detect/optimization/quantization/configs/methods_config.yaml"
+    )
     with open(methods_cfg_path, "r") as file:
         methods_config = yaml.safe_load(file)
 
-    pipeline_cfg_path = "src/zone_detect/quantization/configs/pipeline_config.yaml"
+    pipeline_cfg_path = (
+        "src/zone_detect/optimization/quantization/configs/pipeline_config.yaml"
+    )
     pipeline_config, device, _ = setup({"conf": pipeline_cfg_path})
 
     return methods_config, pipeline_config, device
@@ -38,7 +42,7 @@ def dry_run():
 
     # print each method
     for method_name, method_params in methods_config.items():
-        if method_params.get("enabled", True):
+        if method_params.get("enable", True):
 
             config = deepcopy(pipeline_config)
             flag = method_params.get("flag", "")
@@ -77,6 +81,9 @@ def dry_run():
 def run_pipeline():
 
     methods_config, pipeline_config, device = get_configs()
+
+    for method_name, method_params in methods_config.items():
+        pass
 
     raise NotImplementedError("Pipeline execution logic is not implemented yet.")
     # TODO

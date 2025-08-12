@@ -5,8 +5,12 @@ from typing import Any
 import torch
 from safetensors.torch import save_file
 
-from src.zone_detect.metrics.metrics import sparsity
-from src.zone_detect.model import opti_pruna
+from src.zone_detect.optimization.pruning import opti_pruna, sparsity
+from src.zone_detect.optimization.quantization.quant_methods import (
+    with_quanto,
+    with_torchao,
+    with_pytorch,
+)
 
 
 def pt_optimize_model(
@@ -46,7 +50,7 @@ def opti_pruning(
     model = opti_pruna(model, params)
 
     if verbose:
-        sparsity({"model": model})
+        sparsity(model)
 
     return model
 
@@ -63,7 +67,7 @@ def opti_quantization(
 
     if dtype == torch.float32:
         return model
-    if dtype in (torch.bfloat16, torch.float16):
+    if "float16" in str(dtype):
         # simple truncation
         model = model.to(dtype)
         # converting all parameters to bfloat16
@@ -89,8 +93,13 @@ def opti_quantization(
         method = quant_args.get("flag", "pytorch")
         precision = quant_args.get("precision", "float32")
 
-        if method == "pytorch":
-            pass
+        quant_function = eval(f"with_{method}")
+        # en vrai faut pas faire ça c'est joli mais pas robuste
+
+        if quant_function is None:
+            raise ValueError(f"Quantization method '{method}' is not implemented.")
+
+        model = quant_function(model, quant_args)
 
         # use provided quantization method
         # check precision and device compatibility
