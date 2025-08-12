@@ -4,18 +4,19 @@ import numpy as np
 import rasterio
 import torch
 from tqdm import tqdm
-from src.zone_detect.prepare import prepare_data
+
 from src.zone_detect.utils import read_config
+from src.zone_detect.prepare import prepare_data
 
 from rasterio.enums import Resampling
 
 
-config_path = "/media/DATA/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/configs/20250723_config_detect_latest-update.yaml"
+config_path = "./configs/20250804_config_detect_latest-update.yaml"
 
 dataset_size = 200
 
-input_dir_path = "/media/DATA/INFERENCE_HS/DATA/dataset_zone_last/ortho/D037_2021"
-save_path = "/home/ign.fr/SHys/FLAIR-1/0testing_saves/20250730/calibration_dataset"
+input_dir_path = "/var/tmp/shys/INFERENCE_HS/DATA/dataset_zone_last/ortho/D037_2021"
+save_path = "./0testing_saves/calibration_dataset"
 
 # random seed for reproducibility
 # randomly select 200 images from the input directory (with replacement)"
@@ -30,7 +31,7 @@ seed = 42
 random.seed(seed)
 
 
-def create_calib_dataset(config_path: str, dataset_size: int, save_path):
+def create_calib_dataset(config_path: str, dataset_size: int, save_path) -> str:
     config = read_config({"conf": config_path})
 
     config["batch_size"] = 1  # Set batch size to 1 for calibration dataset
@@ -58,7 +59,7 @@ def create_calib_dataset(config_path: str, dataset_size: int, save_path):
         config["input_img_path"] = str(image_path)
 
         # slice image
-        _, data_loader, _, _ = prepare_data(config)
+        _, data_loader, _, _ = prepare_data(config)  # type: ignore
         nb_draws = image_count[image_path]
 
         # draw patches
@@ -68,6 +69,7 @@ def create_calib_dataset(config_path: str, dataset_size: int, save_path):
         next_idx = save_calibration_images(reservoir, save_path, start_idx=next_idx)
 
     print(f"Calibration dataset created at {save_path}")
+    return save_path
 
 
 def get_k_patches(dataloader, k: int, seed=None) -> list[dict[str, torch.Tensor]]:
@@ -280,13 +282,21 @@ def load_calibration_images(
 
         images.append(tensor)
 
+    batch_size = 40
+    # Create batches of samples with batch_size along the first axis
+    batched_samples_list = []
+    for i in range(0, len(images), batch_size):
+        batch = images[i : i + batch_size]
+        # Ensure all samples are on the same device and have the same shape
+        batch = [s.to("cuda") for s in batch]
+        batch_tensor = torch.cat(batch, dim=0)
+        batched_samples_list.append(batch_tensor)
+
     print(f"Loaded {len(images)} calibration images from {save_dir}")
     return images
 
 
 if __name__ == "__main__":
-    # create_calib_dataset(config_path, dataset_size, save_path)
+    out = create_calib_dataset(config_path, dataset_size, save_path)
 
-    load_calibration_images(
-        "/home/ign.fr/SHys/FLAIR-1/0testing_saves/20250730/calibration_dataset"
-    )
+    load_calibration_images(out)
