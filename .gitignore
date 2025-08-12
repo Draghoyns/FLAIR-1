@@ -155,3 +155,5 @@ credentials copy.json
 *.pth
 *.pt
 *.onnx
+model.safetensors
+quantization_map.json
