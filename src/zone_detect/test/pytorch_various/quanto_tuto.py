@@ -1,41 +1,60 @@
 # source:
 # https://github.com/huggingface/optimum-quanto
 
+import json
+import os
+
 import datetime
 import torch
-from src.zone_detect.model import load_model_from_cfg_path
-from optimum.quanto import quantize, qint8
+from optimum.quanto import (
+    quantize,
+    qint8,
+    Calibration,
+    freeze,
+    requantize,
+    quantization_map,
+)
+from safetensors.torch import save_file, load_file
+from tqdm import tqdm
 
-config_path = "/media/stores/tmp/store-DAI/pocs/INFERENCE_SH/DATA/inference_flair/configs/config_detect_compare_metrics.yaml"
+from src.zone_detect.optimization.calibration import load_calibration_images
+from src.zone_detect.model import load_model_from_cfg_path
+
+
+config_path = "/home/SHys/FLAIR-1/configs/20250804_config_detect_latest-update.yaml"
 today = datetime.datetime.now().strftime("%Y%m%d")
 
 model = load_model_from_cfg_path(config_path).eval().to("cuda")
 
 quantize(model, weights=qint8, activations=qint8)
 
-print(f"Model quantized successfully to {model.dtype}.")
 
-from optimum.quanto import Calibration
+print(f"Model quantized successfully (fake quantization).")
+
 
 # i understand samples are simple tensors, but what kind ? how many is advised ? where do i get them from ?
 samples = torch.randn(1, 3, 512, 512).to("cuda")
 
-# with Calibration(momentum=0.9):
-#   model(samples)
+samples_list = load_calibration_images("./0testing_saves/calibration_dataset")
 
-from optimum.quanto import freeze
+with Calibration(momentum=0.9):
+    with torch.no_grad():
+        for batch in tqdm(samples_list, desc="Calibrating model with batches..."):
+            model(batch)
+
+            del batch
+            torch.cuda.empty_cache()
 
 freeze(model)
 
+print(f"Model frozen successfully -> quantized to qint8.")
+
 dir_path = f"./src/zone_detect/test/pytorch_various/{today}_quanto"
-import os
 
 if not os.path.exists(dir_path):
     os.makedirs(dir_path)
 print("Directory created successfully.")
 
-
-from safetensors.torch import save_file
 
 save_file(
     model.state_dict(),
@@ -44,18 +63,11 @@ save_file(
 
 print("Model state_dict saved successfully.")
 
-import json
-
-from optimum.quanto import quantization_map
 
 with open(
     f"./src/zone_detect/test/pytorch_various/{today}_quanto/quantization_map.json", "w"
 ) as f:
     json.dump(quantization_map(model), f)
-
-
-from safetensors.torch import load_file
-from optimum.quanto import requantize
 
 
 state_dict = load_file(
