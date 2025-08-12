@@ -9,7 +9,7 @@ from rasterio.io import DatasetWriter
 from rasterio.windows import Window
 
 from src.zone_detect.dataset import convert
-from src.zone_detect.slicing_utils import (
+from src.zone_detect.slicing_job import (
     geo_patch_overlap,
     patch_weights,
     total_weights,

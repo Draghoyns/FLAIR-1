@@ -34,7 +34,8 @@ from tqdm import tqdm
 from codecarbon import OfflineEmissionsTracker
 
 from src.zone_detect.inference import inference
-from src.zone_detect.main import Logger, prepare_data, prepare_model, prepare_output
+from src.zone_detect.prepare import prepare_data, prepare_output
+from src.zone_detect.model import prepare_model
 from src.zone_detect.metrics.create_dataset import interactive_dataset
 from src.zone_detect.metrics.metrics import add_confusion, process_metrics
 from src.zone_detect.stitching_job import stitching
@@ -44,6 +45,7 @@ from src.zone_detect.utils import (
     setup,
     setup_out_path,
     timer,
+    Logger,
 )
 
 Config = dict[str, Any]

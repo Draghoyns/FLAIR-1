@@ -7,7 +7,6 @@ from tqdm import tqdm
 
 import lazy_import
 
-from src.zone_detect.slicing_utils import nb_patches
 
 wandb = lazy_import.lazy_module("wandb")
 
@@ -24,12 +23,11 @@ from rasterio.windows import Window
 from sklearn.metrics import confusion_matrix
 
 from src.zone_detect.model import (
-    analyze_model_weights,
     load_model,
-    load_model_from_cfg_path,
 )
 from src.zone_detect.slicing_job import slice_pixels
 from src.zone_detect.utils import extract_method, info_extract
+from src.zone_detect.slicing_job import nb_patches
 
 Config = dict[str, Any]  # type alias for configuration dictionary
 
@@ -593,35 +591,6 @@ def error_rate_patch(
     dic[pred_path] = out_array
 
     return dic
-
-
-def sparsity(model_arg: dict, save: str = "") -> None:
-    """Compute the sparsity of the model from the configuration file.
-    Args:
-        model_arg (dict): Dictionary containing the model configuration, which can include either a path to a configuration file ("config") or the model itself ("model").
-    """
-
-    cfg = model_arg.get("config", None)
-    model = model_arg.get("model", None)
-
-    if cfg is None and model is None:
-        raise ValueError("Please provide a configuration path or a model.")
-
-    if model is None:
-        if type(cfg) is str:
-            model = load_model_from_cfg_path(cfg)
-        elif type(cfg) is dict:
-            model = load_model(cfg)
-        else:
-            raise ValueError("cfg_path should be a string or a dictionary.")
-
-    report = analyze_model_weights(model, save=bool(save))
-    report_df = pd.DataFrame(report)
-
-    if save:
-        out_path = save if save.endswith(".csv") else save + ".csv"
-        report_df.to_csv(out_path, index=False)
-        print(f"Model weight report saved to {out_path}")
 
 
 #### ANALYSIS ####

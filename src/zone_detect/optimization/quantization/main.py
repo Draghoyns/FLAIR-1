@@ -32,5 +32,5 @@ if __name__ == "__main__":
 
 
 # command
-# python src/zone_detect/quantization/main.py --dry-run
-# python src/zone_detect/quantization/main.py
+# python src/zone_detect/optimization/quantization/main.py --dry-run
+# python src/zone_detect/optimization/quantization/main.py

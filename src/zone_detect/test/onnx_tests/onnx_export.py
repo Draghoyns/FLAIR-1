@@ -10,12 +10,11 @@ from typing import Optional
 from scipy.special import softmax
 
 import torch
+from torch import nn
 from torch.onnx import export, ONNXProgram
 import onnx
 import onnxruntime
 from onnxsim import simplify
-
-from src.zone_detect.model import load_model
 
 
 #### Swin IRC model ####
@@ -33,7 +32,7 @@ def check_export_onnx(onnx_path: Path):
         onnx.checker.check_model(onnx_model)
 
 
-def export_onnx(config: dict[str, Any]):
+def export_onnx(model: nn.Module, config: dict[str, Any]):
     """
     Export a HuggingFace model to ONNX format, based on a checkpoint file.
     """
@@ -56,7 +55,6 @@ def export_onnx(config: dict[str, Any]):
         output_path = save_directory / filename
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    model = load_model(config)
     model.eval()
 
     assert (
@@ -90,7 +88,7 @@ def export_onnx(config: dict[str, Any]):
     return simp_onnx_path
 
 
-def get_onnx_path(config: dict[str, Any]) -> Path:
+def get_onnx_path(model: nn.Module, config: dict[str, Any]) -> Path:
     """Get the ONNX model path based on the provided checkpoints file. If no ONNX export was found, export the model to ONNX format."""
 
     weights = config.get("model_weights", "")
@@ -116,7 +114,7 @@ def get_onnx_path(config: dict[str, Any]) -> Path:
         print(f"ONNX model not found at {onnx_path}. Exporting...")
         config.update({"onnx_path": onnx_path})
         # Export the model to ONNX format
-        onnx_path = export_onnx(config)
+        onnx_path = export_onnx(model, config)
 
     return onnx_path
 
@@ -197,12 +195,11 @@ def dummy_input_onnx(input_img: Path):
 
 
 def compare_to_pytorch(
-    config: dict[str, Any], onnx_model_path: Path, input_tensor: torch.Tensor
+    pt_model: nn.Module, onnx_model_path: Path, input_tensor: torch.Tensor
 ) -> None:
     """
     Compare the output of a PyTorch model with an ONNX model.
     """
-    pt_model = load_model(config)
     pt_model.eval()
     with torch.no_grad():
         pt_output = pt_model(input_tensor)
@@ -352,47 +349,3 @@ def debug_onnx_model(onnx_path: Path):
                 if not has_value:
                     print(f" - {attr.name} (type: {attr.type})")
                     print(f"❗ Missing 'value' attribute in {node.name} node {i}")
-
-
-if __name__ == "__main__":
-
-    save_directory = "/home/ign.fr/SHys/FLAIR-1/src/zone_detect/test/onnx"
-
-    model_name = "openmmlab/upernet-swin-small"
-    model_ckpt = "/home/ign.fr/SHys/FLAIR-1/0testing_saves/20250630_pruna-torch_dynamic/converted_model.ckpt"
-
-    config = {
-        "model_framework": {
-            "model_provider": "HuggingFace",
-            "HuggingFace": {
-                "org_model": model_name,
-            },
-        },
-        "n_classes": 19,
-        "channels": [1, 2, 3],
-        "model_weights": model_ckpt,
-        "patch_size": 512,
-    }
-
-    # Export the HuggingFace model to ONNX
-    onnx_opti = export_onnx(config)
-
-    input_img = "/media/DATA/INFERENCE_HS/DATA/dataset_zone_last/ortho/D037_2021/UU_S1_4/037_2021_UU_S1_4_IRC.tif"
-
-    dummy = dummy_input_onnx(Path(input_img))
-
-    """
-    pred_simple = inference_onnx(Path(onnx_simple), dummy)
-    pred_opti = inference_onnx(Path(onnx_opti), dummy)
-
-    mse = np.mean((pred_simple - pred_opti) ** 2)
-    print(f"Mean Squared Error between simple and optimized ONNX predictions: {mse}")
-
-    print("Inference completed successfully.")
-
-    print("Comparing ONNX optimized model with PyTorch model...")
-    compare_to_pytorch(config, Path(onnx_opti), dummy)
-    """
-
-    print("Comparing ONNX model with PyTorch model...")
-    compare_to_pytorch(config, onnx_opti, dummy)

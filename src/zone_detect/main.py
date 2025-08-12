@@ -11,10 +11,10 @@ from typing import Any
 from src.zone_detect.dataset import post_processing
 from src.zone_detect.inference import inference
 from src.zone_detect.prepare import (
-    prepare_model,
     prepare_output,
     prepare_data,
 )
+from src.zone_detect.model import prepare_model
 from src.zone_detect.stitching_job import stitching
 
 from src.zone_detect.metrics.metrics import (
@@ -110,7 +110,9 @@ def run_pipeline(config: Config) -> None:
         stride = combi["stride"]
         stitch = combi["stitching"]
 
-        effective_output_type = (output_type if stitch == "exact-clipping" else "class_prob")
+        effective_output_type = (
+            output_type if stitch == "exact-clipping" else "class_prob"
+        )
 
         config.update(
             {

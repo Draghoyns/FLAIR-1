@@ -16,7 +16,7 @@ import rasterio
 import torch
 from pytorch_lightning.utilities.rank_zero import rank_zero_only  # type: ignore
 
-from src.zone_detect.slicing_utils import get_stride
+from src.zone_detect.slicing_job import get_stride
 
 Config = dict[str, Any]  # type alias for configuration dictionary
 

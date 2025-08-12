@@ -2,6 +2,7 @@
 - config files are fetched from configs -> can be changed in the code, but recommend modifying the config files directly
 - run main.py from the root of the folder, which is `FLAIR-1`
 - download the model checkpoints and put them in the model folder. If you rename it, you will need tto change the path in `pipeline_config.yaml` 
+- to use the script, you have to donwload some model weights and put them in the `model` folder, then change the `model_weights` field in `configs/pipeline_config.yaml`
 - if you want to change the base model, put the weights in the `model` folder and update the model path (the quantization methods may not work very well if you change though)
 
 # TODO
