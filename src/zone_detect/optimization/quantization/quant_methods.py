@@ -12,29 +12,38 @@ def with_quanto(model: torch.nn.Module, quant_args: dict) -> torch.nn.Module:
     This method of quantization is compatible with torch.compile
     """
 
-    precision, weights, activations, calibration, calibration_path = (
-        quant_args.get("precision", "qint8"),
-        quant_args.get("weights", "qint8"),
-        quant_args.get("activations", "qint8"),
-        quant_args.get("calibration", False),
+    method = quant_args.get("method", "dynamic")
+    method_args = quant_args.get("methods", {}).get(method, {})
+
+    weights, activations, calibration, calibration_path = (
+        eval(method_args.get("weights", qint8)),
+        method_args.get("activations", None),
+        method_args.get("calibration", False),
         quant_args.get("calibration_dataset", ""),
     )
+    if activations:
+        activations = eval(activations)
 
     quantize(model, weights=weights, activations=activations)
 
     if calibration and calibration_path:
+
         samples_list = load_calibration_images(calibration_path)
-        with Calibration(momentum=0.5):
-            for batch in tqdm(samples_list, desc="Calibrating model with batches..."):
-                model(batch)
+        with Calibration(momentum=0.9):
+            with torch.no_grad():
+                for batch in tqdm(
+                    samples_list, desc="Calibrating model with batches..."
+                ):
+                    model(batch)
 
-                del batch
-                torch.cuda.empty_cache()
-        # this is done on the fly !!!
-
+                    del batch
+                    torch.cuda.empty_cache()
+            # this is done on the fly !!!:
     else:
-        print("Calibration not enabled or path not provided, skipping calibration.")
-
+        print(
+            "No calibration dataset provided."
+            "This may lead to suboptimal quantization results."
+        )
     freeze(model)
 
     return model

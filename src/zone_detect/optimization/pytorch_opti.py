@@ -106,7 +106,9 @@ def opti_quantization(
         # apply quantization
         # save with specificities if switch in config
 
-        print("Quantization not implemented for this dtype, this is a placeholder.")
+        print(
+            "Quantization not fully implemented for this dtype, this is a placeholder."
+        )
         pass
 
     return model
