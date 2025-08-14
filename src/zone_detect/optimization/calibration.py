@@ -280,7 +280,7 @@ def load_calibration_images(
             std = torch.tensor([0.229, 0.224, 0.225]).view(3, 1, 1)
             tensor = (tensor - mean) / std
 
-        images.append(tensor)
+        images.append(tensor.unsqueeze(0))  # Add batch dimension
 
     batch_size = 40
     # Create batches of samples with batch_size along the first axis
@@ -293,7 +293,7 @@ def load_calibration_images(
         batched_samples_list.append(batch_tensor)
 
     print(f"Loaded {len(images)} calibration images from {save_dir}")
-    return images
+    return batched_samples_list
 
 
 if __name__ == "__main__":
