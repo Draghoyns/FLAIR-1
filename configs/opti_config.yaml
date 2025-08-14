@@ -1,6 +1,6 @@
 compile: false
 prune: false # use pruna.ai optimization methods
-quantize: false
+quantize: true
 
 prune_args:
   precision: float32 # int8
@@ -8,9 +8,10 @@ prune_args:
   sparse: 0.005
   methods:
     pruner: torch_unstructured
+    quantizer: half
 
-available_quantize_methods: [pytorch, quanto, torchao] # let's not handle onnx optimization for now
-quantize_method: pytorch # default method
+available_quantize_methods: [pytorch, quanto, torchao ] # let's not handle onnx optimization for now
+quantize_method: quanto # default method
 
 pytorch_args: # method name and args name have to match exactly !!
   flag: pytorch
@@ -20,7 +21,19 @@ pytorch_args: # method name and args name have to match exactly !!
 quanto_args:
   flag: quanto
   precision: int8
-  weights: qint8
-  activations: qint8
-  calibration: True
-  calibration_dataset: /home/ign.fr/SHys/FLAIR-1/0testing_saves/20250730/calibration_dataset
+  method: weight_only # dynamic # or static or weight_only
+  calibration_dataset: ./0testing_saves/calibration_dataset
+  methods:
+    dynamic :
+      calibration: False
+      weights: qint8
+      activations: qint8
+    static :
+      calibration: True
+      weights: qint8
+      activations: qint8
+    weight_only :
+      calibration: False
+      weights: qint8
+      activations: None
+  incompatible : ['compile']

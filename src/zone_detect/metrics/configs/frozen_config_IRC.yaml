@@ -1,5 +1,5 @@
 #### OUTPUT
-output_path: ./0testing_saves/out20250804
+output_path: ./0testing_saves/out20250814
 output_type: argmax # prediction type
 
 #### PARAMETERS
@@ -26,11 +26,9 @@ num_worker: 8
 #### SAVING AND LOGGING
 log_verbose: false
 save_logs: false # if true, save logs in output_path
-save_inference: true # save inference results
+save_inference: false
 
 #### OPTIMIZATION SWITCHES
-pruna : false
-precision : float32
 onnx: false # if true, use onnx model, else use pytorch model
 opti_config: ./configs/opti_config.yaml # path to optimization method config file
 save_opti_model: False
