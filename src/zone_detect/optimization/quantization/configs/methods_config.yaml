@@ -3,7 +3,7 @@ pytorch_baseline :
   precision : float32
 
 onnx_baseline :
-  enable : true
+  enable : false
   precision : float32
   flag : onnx
 

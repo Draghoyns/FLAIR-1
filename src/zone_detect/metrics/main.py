@@ -478,8 +478,12 @@ if __name__ == "__main__":
 # command to run the script:
 # update this depending on the paths wanted
 
-#### SWIN
+#### SWIN IRC
 # python src/zone_detect/metrics/main.py --data=0testing_saves/data_paths_IRC.csv --ckpt=/media/DATA/INFERENCE_HS/MODELS_IA/FLAIR1/swin-upernet-small_IRV_SET1/checkpoints/ckpt-epoch=84-val_loss=0.37_00_HF_SwinUpernet_Small_IR-R-G_set1.ckpt
+
+#### SWIN RVB
+# python src/zone_detect/metrics/main.py --data=0testing_saves/data_paths_RVB.csv --ckpt=/var/tmp/shys/INFERENCE_HS/MODELS_IA/FLAIR1/swin_upernet_small_RVB/ckpt-epoch=126-val_loss=0.37_03-swin-upernet-small_PROD_FLAIR-INC_RVB_ini-none_custom.ckpt
+
 
 #### UNET
 # python src/zone_detect/metrics/main.py --data=0testing_saves/data_paths_RVB.csv --ckpt=/media/DATA/INFERENCE_HS/MODELS_IA/FLAIR1/unet_resnet/FLAIR-INC_rgb_15cl_resnet34-unet_weights.pth

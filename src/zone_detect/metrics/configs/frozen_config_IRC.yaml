@@ -1,5 +1,5 @@
 #### OUTPUT
-output_path: ./0testing_saves/out20250814
+output_path: ./0testing_saves/out20250818
 output_type: argmax # prediction type
 
 #### PARAMETERS

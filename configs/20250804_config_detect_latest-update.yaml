@@ -11,18 +11,18 @@ log_verbose: false
 save_inference: true # save inference results
 
 #### OUTPUT
-output_path: ./0testing_saves/out20250804
+output_path: /var/tmp/shys/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out20250805
 output_name: D037_2021_UU_S1_4_IRC-ARGMAX-S # stem
 output_type: argmax # prediction type
 
 #### INPUT AND GROUND TRUTH
 data_type: IRC # IR, IRC, RVB, RVBI, RVBIE
-input_root: /media/stores/tmp/store-DAI/pocs/INFERENCE_SH/DATA/ortho # + dpt + zone
-input_img_path: /media/stores/tmp/store-DAI/pocs/INFERENCE_SH/DATA/ortho/D037_2021/UU_S1_4/037_2021_UU_S1_4_IRC.tif
-input_path : /media/stores/tmp/store-DAI/pocs/INFERENCE_SH/DATA/ortho/D037_2021 # optional - directory if multiple inputs
+input_root: /var/tmp/shys/INFERENCE_HS/DATA/dataset_zone_last/ortho # + dpt + zone
+input_img_path: /var/tmp/shys/INFERENCE_HS/DATA/dataset_zone_last/ortho/D037_2021/UU_S1_4/037_2021_UU_S1_4_IRC.tif
+input_path : /var/tmp/shys/INFERENCE_HS/DATA/dataset_zone_last/ortho/D037_2021 # optional - directory if multiple inputs
 
-truth_root: /media/stores/tmp/store-DAI/pocs/INFERENCE_SH/DATA/labels_raster/FLAIR19 # + dpt + zone
-truth_path : /media/stores/tmp/store-DAI/pocs/INFERENCE_SH/DATA/labels_raster/FLAIR19/D037_2021/UU_S1_4/D037_2021-UU_S1_4-MSK_FLAIR19-LABEL.tif
+truth_root: /var/tmp/shys/INFERENCE_HS/DATA/dataset_zone_last/labels_raster/FLAIR_19 # + dpt + zone
+truth_path : /var/tmp/shys/INFERENCE_HS/DATA/dataset_zone_last/labels_raster/FLAIR_19/D037_2021/UU_S1_4/D037_2021-UU_S1_4-MSK_FLAIR19-LABEL.tif
 
 #### PARAMETERS
 channels: [1, 2, 3, ] 
@@ -30,7 +30,7 @@ img_pixels_detection: 512 # best for swin
 margin: 0 # for clipping at stitching time
 
 #### MODEL
-model_weights: /media/stores/tmp/store-DAI/pocs/INFERENCE_SH/MODELS_IA/FLAIR1/swin-upernet-small_IRV_SET1/checkpoints/ckpt-epoch=84-val_loss=0.37_00_HF_SwinUpernet_Small_IR-R-G_set1.ckpt
+model_weights: /var/tmp/shys/INFERENCE_HS/MODELS_IA/FLAIR1/swin-upernet-small_IRV_SET1/checkpoints/ckpt-epoch=84-val_loss=0.37_00_HF_SwinUpernet_Small_IR-R-G_set1.ckpt
 model_framework: 
     model_provider: HuggingFace 
     

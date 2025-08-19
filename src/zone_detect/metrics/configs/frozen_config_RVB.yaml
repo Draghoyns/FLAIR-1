@@ -1,10 +1,6 @@
 #### OUTPUT
-output_path: /media/DATA/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out20250710 #.
-output_name: D037_2021_UU_S1_4_IRC-ARGMAX-S # stem
+output_path: ./0testing_saves/out20250818
 output_type: argmax # prediction type
-
-#### INPUT AND GROUND TRUTH
-data_type: RVB # IR, IRC, RVB, RVBI, RVBIE
 
 #### PARAMETERS
 channels: [1, 2, 3, ] 
@@ -13,26 +9,29 @@ margin: 0 # for clipping, in pixels
 
 #### MODEL
 model_framework: 
-    model_provider: SegmentationModelsPytorch
+    model_provider: HuggingFace
     
     HuggingFace:
         org_model: openmmlab/upernet-swin-small
     SegmentationModelsPytorch:
         encoder_decoder: resnet34_unet
 
-model_name: resnet34_unet
-encoder_name: resnet34
+model_name: upernet-swin-small
+encoder_name: swin-small
 
 batch_size:  2 # for DataLoader
 use_gpu: true 
 num_worker: 8
 
-
-#### OPTIMIZATION SWITCHES
-pruna : true
-onnx: false # if true, use onnx model, else use pytorch model
+#### SAVING AND LOGGING
 log_verbose: false
 save_logs: false # if true, save logs in output_path
+save_inference: false
+
+#### OPTIMIZATION SWITCHES
+onnx: false # if true, use onnx model, else use pytorch model
+opti_config: ./configs/opti_config.yaml # path to optimization method config file
+save_opti_model: False
 
 #### NORMALIZATION
 norma_task:

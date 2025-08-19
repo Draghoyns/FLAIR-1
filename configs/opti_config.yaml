@@ -1,6 +1,6 @@
 compile: false
 prune: false # use pruna.ai optimization methods
-quantize: true
+quantize: false
 
 prune_args:
   precision: float32 # int8
