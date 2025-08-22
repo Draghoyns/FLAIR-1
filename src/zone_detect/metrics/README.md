@@ -56,6 +56,12 @@ python main.py --data=data_paths.csv --ckpt=SwinUpernet_Small.ckpt
 
 - Python 3.x (3.11 is advised, no guarantees on dependencies if you use other versions)
 - Any dependencies listed in `requirements.txt` (if available).
+- some conda packages are needed too :
+```bash
+conda install -c nvidia cuda-toolkit
+conda install -c conda-forge cudnn
+```
+-> refer to `environment.yaml`
 
 ## Notes
 
