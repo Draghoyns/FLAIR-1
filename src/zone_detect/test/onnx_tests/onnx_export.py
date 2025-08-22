@@ -116,6 +116,8 @@ def get_onnx_path(model: nn.Module, config: dict[str, Any]) -> Path:
         # Export the model to ONNX format
         onnx_path = export_onnx(model, config)
 
+    print(f"Using ONNX model at: {onnx_path}")
+
     return onnx_path
 
 

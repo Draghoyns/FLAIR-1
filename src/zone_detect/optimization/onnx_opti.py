@@ -1,15 +1,32 @@
-import onnxruntime as ort
 from pathlib import Path
+
+import onnxruntime as ort
+from onnxruntime.quantization import quantize_dynamic
+from onnxruntime.quantization.shape_inference import quant_pre_process
 
 
 def onnx_optimize_model(config: dict, onnx_path: Path) -> Path:
     """Takes an ONNX model file and quantizes it if necessary."""
 
-    if config.get("precision", "fp32") != "fp32":
-        # do quantization -> check quantization module oopsie
-        print("Quantization is not implemented yet, it's a placeholder for logic.")
-        return onnx_path
+    if "float32" not in config.get("onnx_quant_precision", "float32"):
+        # int8 by default honestly
+
+        # preprocessing
+        out_preprocessed = (
+            Path(onnx_path).parent / f"{onnx_path.stem}_preprocessed.onnx"
+        )
+        out_quant = Path(onnx_path).parent / f"{onnx_path.stem}_quantized.onnx"
+        quant_pre_process(onnx_path, out_preprocessed)
+
+        quantize_dynamic(
+            out_preprocessed,
+            out_quant,
+        )
+
+        print("Quantized model saved to:", out_quant)
+        return out_quant
     else:
+
         return onnx_path
 
 
