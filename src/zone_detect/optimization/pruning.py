@@ -13,7 +13,7 @@ def opti_pruna(model: nn.Module, params: dict) -> nn.Module:
     smash_config = SmashConfig()  # see pruna documentation for details
 
     for key, value in params.get("methods", {}).items():
-        smash_config[str(key)] = str(value)
+        smash_config[str(key)] = value
 
     sparse = params.get("sparse", 0)
     if sparse != 0:
