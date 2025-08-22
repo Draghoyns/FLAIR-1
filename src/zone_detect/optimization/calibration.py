@@ -224,6 +224,7 @@ def load_calibration_images(
     target_size: tuple[int, int] = (512, 512),
     normalize: bool = True,
     to_float: bool = True,
+    device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu"),
 ) -> list[torch.Tensor]:
     """
     Load calibration images from directory using rasterio.
@@ -282,7 +283,10 @@ def load_calibration_images(
 
         images.append(tensor.unsqueeze(0))  # Add batch dimension
 
-    batch_size = 40
+    batch_size = 1
+    if device == torch.device("cuda"):
+        batch_size = 40
+
     # Create batches of samples with batch_size along the first axis
     batched_samples_list = []
     for i in range(0, len(images), batch_size):
