@@ -1,9 +1,12 @@
+import colorsys
 import datetime
 import gc
 import json
 import os
 import psutil
 from tqdm import tqdm
+
+from adjustText import adjust_text
 
 import lazy_import
 
@@ -680,6 +683,232 @@ def log_to_WB(metrics_path: Path, sort_per_param: str = "") -> None:
     wandb.finish()
 
 
+def generate_readable_colors(n):
+    """
+    Generate n visually distinct, readable colors using HSV -> RGB.
+    Saturation and Value are controlled to avoid very light colors.
+    """
+    colors = []
+    for i in range(n):
+        h = i / n  # spread hues evenly
+        s = 0.7  # high saturation
+        v = 0.7  # medium brightness
+        r, g, b = colorsys.hsv_to_rgb(h, s, v)
+        colors.append((r, g, b))
+    return colors
+
+
+def compute_colors(values, baseline_val, min_intensity=0.3, max_intensity=0.9):
+    """
+    Diverging pastel-to-dark colors:
+    - Close to baseline → pastel (light)
+    - Far from baseline → dark
+    - Baseline → ochre
+    """
+
+    min_light = 0.5
+    max_light = 0.9
+    min_sat = 0.3
+    max_sat = 1.0
+
+    values = np.array(values)
+    distances = np.abs(values - baseline_val)
+    max_dist = distances.max() + 1e-12  # avoid div by zero
+
+    colors = []
+    for v, d in zip(values, distances):
+        if np.isclose(v, baseline_val):
+            colors.append("sandybrown")  # baseline ochre
+        else:
+            # Scale lightness and saturation with distance
+            lightness = max_light - (d / max_dist) * (max_light - min_light)
+            saturation = max_sat - (d / max_dist) * (max_sat - min_sat)
+            if v < baseline_val:
+                h = 1 / 3  # green
+            else:
+                h = 0  # red
+            r, g, b = colorsys.hls_to_rgb(h, lightness, saturation)
+            colors.append((r, g, b))
+    return colors
+
+
+def plot_experiments(json_files, baseline=None, out_path="plot.png"):
+    miou_vals = []
+    time_vals = []
+    labels = []
+
+    # Load metrics
+    for f in json_files:
+        with open(f, "r") as jf:
+            data = json.load(jf)[0]
+        miou_idx = data["Avg_metrics_name"].index("mIoU")
+        inf_idx = data["Avg_metrics_name"].index("Inference time in ms")
+
+        miou_vals.append(data["Avg_metrics"][miou_idx])
+        time_vals.append(data["Avg_metrics"][inf_idx])
+        labels.append(os.path.basename(os.path.dirname(f)))
+
+    n_points = len(json_files)
+
+    # Identify baseline
+    baseline_idx = None
+    if baseline is not None:
+
+        for i, f in enumerate(json_files):
+            if os.path.samefile(f, baseline):
+                baseline_idx = i
+                break
+        else:
+            raise ValueError(f"Baseline file {baseline} not found in json_files list")
+
+    plt.figure(figsize=(8, 8))
+
+    # Generate readable colors for experiments (exclude baseline)
+    colors = generate_readable_colors(n_points)
+    if baseline_idx is not None:
+        colors[baseline_idx] = (1.0, 0.0, 0.0)  # red for baseline (cross)
+
+        x_base = time_vals[baseline_idx]
+        y_base = miou_vals[baseline_idx]
+        # Draw light gray cross lines
+
+        plt.axvline(x=x_base, color="gray", linestyle="--", linewidth=1, zorder=1)
+        plt.axhline(y=y_base, color="gray", linestyle="--", linewidth=1, zorder=1)
+
+    texts = []
+
+    # Precompute offsets in a radial pattern
+    radius = 0.02  # fraction of axis range
+    angles = np.linspace(0, 2 * np.pi, n_points, endpoint=False)
+    dxs = radius * np.cos(angles) * (max(time_vals) - min(time_vals))
+    dys = radius * np.sin(angles) * (max(miou_vals) - min(miou_vals))
+
+    for i, (x, y, label) in enumerate(zip(time_vals, miou_vals, labels)):
+        if i == baseline_idx:
+            plt.scatter(
+                x, y, color="red", marker="x", s=150, linewidth=3, label="Baseline"
+            )
+        else:
+            plt.scatter(x, y, color=colors[i], s=80, label="_nolegend_")
+            texts.append(
+                plt.text(x + dxs[i], y + dys[i], label, fontsize=12, color=colors[i])
+            )
+
+    plt.xlabel("Inference Time (ms)")
+    plt.ylabel("mIoU")
+    plt.title("mIoU vs Inference Time")
+
+    adjust_text(
+        texts, only_move={"points": "none", "texts": "xy"}, expand_text=(1.2, 1.2)
+    )
+
+    # Legend: show only baseline and "experiment" marker
+    plt.scatter([], [], color="blue", s=80, label="Experiment")  # representative dot
+    plt.legend()
+
+    # Scale axes with small margin
+    all_x = time_vals
+    all_y = miou_vals
+    plt.xlim(
+        min(all_x) - 0.05 * (max(all_x) - min(all_x)),
+        max(all_x) + 0.05 * (max(all_x) - min(all_x)),
+    )
+    plt.ylim(
+        min(all_y) - 0.05 * (max(all_y) - min(all_y)),
+        max(all_y) + 0.05 * (max(all_y) - min(all_y)),
+    )
+
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=300)
+    plt.close()
+
+
+def plot_carbon_emissions(json_files, baseline=None, out_path="carbon_plot.png"):
+    names = []
+    values = []
+
+    # Load carbon emission from JSONs
+    for f in json_files:
+        with open(f, "r") as jf:
+            data = json.load(jf)[0]
+        # Find indices
+        carbon_idx = data["Avg_metrics_name"].index("Total carbon emissions in kg")
+        area_idx = data["Avg_metrics_name"].index("Total area processed in m2")
+        carbon_kg = data["Avg_metrics"][carbon_idx]
+        area_m2 = data["Avg_metrics"][area_idx]
+
+        # Convert to grams per km²
+        carbon_g_per_km2 = carbon_kg * 1e9 / area_m2
+        values.append(carbon_g_per_km2)
+        names.append(os.path.basename(os.path.dirname(f)))
+
+    # Separate baseline if provided
+    baseline_val = None
+    baseline_name = ""
+    other_names = []
+    other_values = []
+    for n, v, f in zip(names, values, json_files):
+        if baseline is not None and os.path.samefile(f, baseline):
+            baseline_val = v
+            baseline_name = n
+        else:
+            other_names.append(n)
+            other_values.append(v)
+
+    # Sort other experiments ascending
+    sorted_items = sorted(zip(other_names, other_values), key=lambda x: x[1])
+
+    if sorted_items:
+        sorted_names, sorted_values = zip(*sorted_items)
+        sorted_names = list(sorted_names)  # convert tuple to list
+        sorted_values = list(sorted_values)  # convert tuple to list
+    else:
+        sorted_names, sorted_values = [], []
+
+    # Combine baseline first
+    if baseline_val is not None:
+        final_names = [baseline_name] + sorted_names
+        final_values = [baseline_val] + sorted_values
+        colors = ["red"] + generate_readable_colors(len(sorted_names))
+    else:
+        final_names = sorted_names
+        final_values = sorted_values
+        colors = generate_readable_colors(len(sorted_names))
+
+    # Plot
+    plt.figure(figsize=(12, 6))
+    bars = plt.bar(
+        final_names,
+        final_values,
+        color=compute_colors(final_values, baseline_val),
+        width=0.6,
+    )
+
+    # Add value labels
+    for bar in bars:
+        height = bar.get_height()
+        plt.text(
+            bar.get_x() + bar.get_width() / 2,
+            height + 0.01 * max(final_values),
+            f"{height:.6f}",
+            ha="center",
+            va="bottom",
+            fontsize=10,
+        )
+
+    padding_ratio = 0.10  # 5% of range
+    y_max = max(final_values)
+    y_range = y_max
+    plt.ylim(0, y_max + padding_ratio * y_range)
+
+    plt.ylabel("Carbon Emissions (g / km²)")
+    plt.title("Carbon Emissions Comparison")
+    plt.xticks(rotation=45, ha="right")
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=300)
+    plt.close()
+
+
 #### RAM USAGE ####
 def get_ram_usage_mb():
     """Get the current RAM usage of the process in MB.
@@ -752,24 +981,18 @@ def model_ram_compare(ckpt_list: list[str]) -> None:
 
 
 if __name__ == "__main__":
-    # compute a posteriori metrics = error rate
 
-    truth_dir = "/media/DATA/INFERENCE_HS/DATA/dataset_zone_last/labels_raster/FLAIR_19/D037_2021/"
-    out_dir = "/media/DATA/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out2025020/error_rate_margin=0_swin_RVB"
-    pred_dir = "/media/DATA/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out20250520_swin_RVB_last"
+    # extract metrics paths from the output directory
+    dir = "/var/tmp/shys/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out20250821/CPU"
 
-    # error_rate_loop(Path(truth_dir), Path(out_dir), Path(pred_dir))
+    metrics_paths = list(str(p) for p in Path(dir).rglob("**/metrics.json"))
 
-    metrics_path = "/media/DATA/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out20250710/20250710_small_pytorch_gpu_pruna-pruned-l1/metrics.json"
+    # remove sweep metrics
+    metrics_paths = [p for p in metrics_paths if ("sweep" not in str(p))]
 
-    # analyze_metrics((Path(metrics_path)))
+    baseline = "/var/tmp/shys/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out20250821/CPU/E0_baseline/metrics.json"
 
-    log_to_WB(Path(metrics_path), sort_per_param="patch size, margin")
+    plot_experiments(metrics_paths, baseline=baseline, out_path="cpu_plot.png")
 
-    ckpt_list = [
-        # "/media/DATA/INFERENCE_HS/MODELS_IA/FLAIR1/swin-upernet-small_IRV_SET1/checkpoints/ckpt-epoch=84-val_loss=0.37_00_HF_SwinUpernet_Small_IR-R-G_set1.ckpt",
-        # "/home/ign.fr/SHys/FLAIR-1/0testing_saves/20250630_pruna-half/pruna_half_converted.ckpt",
-        # "/home/ign.fr/SHys/FLAIR-1/0testing_saves/20250630_pruna-torch_dynamic/pruna_torch-dynamic_converted.ckpt",
-        "/home/ign.fr/SHys/FLAIR-1/0testing_saves/20250703_pruna-torch_dynamic_resnet/resnet_torch-dynamic_converted_model.ckpt",
-        "/media/DATA/INFERENCE_HS/MODELS_IA/FLAIR1/unet_resnet/FLAIR-INC_rgb_15cl_resnet34-unet_weights.pth",
-    ]
+    path = "/var/tmp/shys/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out20250821/20250821160415_E2-2_margin_sweep_patchsize=640/metrics.json"
+    # log_to_WB(Path(path), sort_per_param="patch size, margin")
