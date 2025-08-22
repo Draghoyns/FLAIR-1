@@ -59,6 +59,7 @@ argParser.add_argument(
     help="path to the data paths csv file, structured as : input_img_path, truth_path",
 )
 argParser.add_argument("--ckpt", help="path to checkpoint file for swin-upernet")
+argParser.add_argument("--conf", help="path to config file, optional")
 
 
 #### UTILS
@@ -74,7 +75,10 @@ def set_config(args, arguments: dict[str, str]) -> Config:
 
     # get data type
     data_type = get_datatype_from_ckpt(args.ckpt)
-    conf = f"src/zone_detect/metrics/configs/frozen_config_{data_type}.yaml"
+    conf = (
+        args.conf or f"src/zone_detect/metrics/configs/frozen_config_{data_type}.yaml"
+    )
+
     arguments["conf"] = conf
 
     # load config file and set up device
@@ -463,10 +467,9 @@ def main():
 
     # get data paths and model ckpt
     args = argParser.parse_args()
-    arguments = {"conf": ""}
 
     # Set up the config
-    config = set_config(args, arguments)
+    config = set_config(args, {})
 
     batch_pipeline(config)
 
@@ -488,6 +491,6 @@ if __name__ == "__main__":
 #### UNET
 # python src/zone_detect/metrics/main.py --data=0testing_saves/data_paths_RVB.csv --ckpt=/media/DATA/INFERENCE_HS/MODELS_IA/FLAIR1/unet_resnet/FLAIR-INC_rgb_15cl_resnet34-unet_weights.pth
 
-# python src/zone_detect/metrics/main.py --data=0testing_saves/data_paths_IRC.csv --ckpt=/
+# python src/zone_detect/metrics/main.py --data=0testing_saves/data_paths_IRC.csv --ckpt=
 
 # /var/tmp/shys/INFERENCE_HS/MODELS_IA/FLAIR1/swin-upernet-small_IRV_SET1/checkpoints/ckpt-epoch=84-val_loss=0.37_00_HF_SwinUpernet_Small_IR-R-G_set1.ckpt

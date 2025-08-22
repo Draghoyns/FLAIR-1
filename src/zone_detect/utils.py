@@ -418,13 +418,12 @@ def setup_out_path(config: Config) -> Config:
     output.mkdir(parents=True, exist_ok=True)
     child_dir = output
 
-    if config.get("compare", False):
-        # create a directory with a unique id
-        current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
-        child_dir = child_dir / Path(current_time)
-        os.makedirs(child_dir, exist_ok=True)
-        if config.get("log_verbose", False):
-            print(f"Creating output directory: {child_dir}")
+    # create a directory with a unique id
+    current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
+    child_dir = child_dir / Path(current_time)
+    os.makedirs(child_dir, exist_ok=True)
+    if config.get("log_verbose", False):
+        print(f"Creating output directory: {child_dir}")
 
     config["local_out"] = child_dir
 
