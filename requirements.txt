@@ -39,7 +39,6 @@ efficientnet_pytorch==0.7.1
 einops==0.8.1
 fief-client==0.20.0
 filelock==3.18.0
--e git+https://github.com/Draghoyns/FLAIR-1.git@b7ac082b8000ef5e9f77864cc46041f1057ca14f#egg=flair
 flatbuffers==25.2.10
 fonttools==4.59.0
 frozenlist==1.7.0
@@ -109,7 +108,6 @@ oauthlib==3.3.1
 omegaconf==2.3.0
 onnx==1.18.0
 onnx-ir==0.1.4
-onnxruntime==1.22.0
 onnxruntime-gpu==1.22.0
 onnxscript==0.3.2
 onnxsim==0.4.36
@@ -214,3 +212,4 @@ xxhash==3.5.0
 yarl==1.20.1
 yaspin==3.1.0
 zipp==3.23.0
+

@@ -159,7 +159,7 @@ def prepare_model(config: Config, device: torch.device) -> Config:
 
     else:
         model_type = "pytorch"
-        dtype = getattr(torch, config.get("precision", "float31"), torch.float32)
+        dtype = getattr(torch, config.get("precision", "float32"), torch.float32)
 
         if verbose:
             print(
@@ -171,7 +171,10 @@ def prepare_model(config: Config, device: torch.device) -> Config:
         model = model.to(device)
 
         # optimization if necessary -> auxiliary function
-        model = pt_optimize_model(config, model, verbose)
+        model, opti_args = pt_optimize_model(config, model, verbose)
+        input_type = getattr(
+            torch, opti_args.get("change_input", "float32"), torch.float32
+        )
 
         arg_package.update(
             {
@@ -179,6 +182,7 @@ def prepare_model(config: Config, device: torch.device) -> Config:
                 "device": device,
                 "use_gpu": config["use_gpu"],
                 "dtype": dtype,
+                "input_type": input_type,
             }
         )
     config.update({"model_type": model_type, "model_args": arg_package})

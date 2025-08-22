@@ -23,6 +23,7 @@ def inference(
             config=config,
             samples=samples,
             quant_type=args.get("dtype", torch.float32),
+            input_type=args.get("input_type", torch.float32),
         )
     elif model_type == "onnx":
         return inference_onnx(ort_session=args["ort_session"], samples=samples)
@@ -39,14 +40,17 @@ def inference_pt(
     config: dict[str, Any],
     samples: dict[str, torch.Tensor],
     quant_type: torch.dtype = torch.float32,
+    input_type: torch.dtype = torch.float32,
 ) -> tuple[np.ndarray, np.ndarray]:
     imgs = samples["image"].to(device, non_blocking=(device.type == "cuda"))
+    model.to(device)
 
     if use_gpu:
         torch.cuda.synchronize()
+
     with torch.no_grad():
-        if quant_type != torch.float32 and use_gpu:
-            imgs = imgs.to(quant_type)
+        if input_type != torch.float32:  # careful, might break for 16-bit precision
+            imgs = imgs.to(input_type)
         logits = model(imgs)
         if config.get("model_framework", {}).get("model_provider") == "HuggingFace":
             logits = logits.logits

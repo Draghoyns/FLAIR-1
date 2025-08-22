@@ -15,11 +15,12 @@ from src.zone_detect.optimization.quantization.quant_methods import (
 
 def pt_optimize_model(
     config: dict, model: torch.nn.Module, verbose: bool = False
-) -> torch.nn.Module:
+) -> tuple[torch.nn.Module, dict]:
     """Optimize a PyTorch model for inference.
     Available optimizations are pruning, quantization and compilation."""
 
     opti_config = load_opti_config(config)
+    opti_args = {}
 
     if opti_config.get("prune", False):
         prune_params = opti_config.get("prune_args", {})
@@ -39,7 +40,10 @@ def pt_optimize_model(
     if opti_config.get("compile", False):
         model = opti_compile(model, verbose)
 
-    return model.eval()
+    if opti_config.get("quantize_method") == "torchao":
+        opti_args["change_input"] = "bfloat16"
+
+    return model.eval(), opti_args
 
 
 def opti_pruning(
@@ -101,15 +105,10 @@ def opti_quantization(
 
         model = quant_function(model, quant_args)
 
-        # use provided quantization method
+        # TODO
         # check precision and device compatibility
         # apply quantization
-        # save with specificities if switch in config
-
-        print(
-            "Quantization not fully implemented for this dtype, this is a placeholder."
-        )
-        pass
+        # save with specificities if save switch in config
 
     return model
 
