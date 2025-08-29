@@ -53,6 +53,7 @@ def clean_confmat(confmat: np.ndarray, config: Config) -> np.ndarray:
 def valid_truth(config: Config) -> Path:
     """Check if the ground truth path is valid and coherent with the input path :
     the zone should be the same in both paths.
+    For early error detection.
     """
     truth_path = Path(config["truth_path"])
     input_path = Path(config["input_img_path"])
@@ -67,12 +68,16 @@ def valid_truth(config: Config) -> Path:
 
 
 def get_truth_path(pred_path: Path, truth_dir: Path) -> Path:
+    """Get the corresponding ground truth path for a given prediction path. Prediction data file and ground truth data file are supposed containing the same zone information.
+
+    For avoiding strict prediction / label couple passed as argument."""
+
     dpt, zone_name = info_extract(pred_path)["dpt"], info_extract(pred_path)["zone"]
 
     # corresponding ground truth
     # we consider gt_folder the overall folder
     truth_subdir = truth_dir / zone_name
-    truth_path = next(truth_subdir.glob("*.tif"), None)
+    truth_path = next(truth_subdir.rglob("*.tif"), None)
     if truth_path is None:
         raise FileNotFoundError(
             f"Ground truth file not found in {truth_subdir}. Please check the folder."
@@ -81,6 +86,10 @@ def get_truth_path(pred_path: Path, truth_dir: Path) -> Path:
 
 
 def collect_paths_truth(config: Config, truth_dir: Path) -> pd.DataFrame:
+    """Create DataFrame with prediction and ground truth paths matched from config. Predictions are supposed stored in output path specified in config.
+
+    For metrics computation.
+    """
     path_collection = []
 
     # get predictions
@@ -441,7 +450,9 @@ def batch_metrics(config: Config, truth_dir: Path) -> list[dict[str, Any]]:
     return metrics_file
 
 
-def error_rate_loop(truth_dir: Path, out_dir: Path, pred_dir: Path) -> None:
+def error_rate_loop(
+    truth_dir: Path, out_dir: Path, pred_dir: Path, autoscale=True
+) -> None:
     """Args:
     pred_dir (Path): the directory with predictions
     out_dir (Path): the output directory for the error rate
@@ -462,6 +473,7 @@ def error_rate_loop(truth_dir: Path, out_dir: Path, pred_dir: Path) -> None:
             pred_path=pred_path,
             dic=dic,
             save=False,
+            autoscale=autoscale,
         )
 
     # aggregate the error rate for each method over all keys
@@ -480,7 +492,6 @@ def error_rate_loop(truth_dir: Path, out_dir: Path, pred_dir: Path) -> None:
     for key in methods.keys():
         methods[key] = methods[key] / total[key]
         # save the error rate as a png
-        autoscale = True
         if autoscale:
             vmin = np.min(methods[key])
             vmax = np.max(methods[key])
@@ -499,13 +510,37 @@ def error_rate_loop(truth_dir: Path, out_dir: Path, pred_dir: Path) -> None:
 
         print(f"Error rate saved to {out_dir / f'error_rate_{key}.png'}")
 
+        # Error vs distance to edge
+
+        h, w = methods[key].shape
+        yy, xx = np.indices((h, w))
+        dist_edge = np.minimum.reduce([yy, h - 1 - yy, xx, w - 1 - xx])
+        max_dist = dist_edge.max()
+        error_vs_dist = [
+            methods[key][dist_edge == d].mean() for d in range(max_dist + 1)
+        ]
+
+        plt.figure(figsize=(8, 6))
+        plt.plot(range(max_dist + 1), error_vs_dist, marker="o")
+        plt.xlabel("Distance to Edge (pixels)")
+        plt.ylabel("Average Error Rate")
+        plt.title("Error vs Distance-to-Edge : \n" + key)
+        plt.grid(True)
+        plt.savefig(str(out_dir / f"error_vs_edge_{key}.png"))
+        plt.close()
+
 
 # not incorporated in the pipeline, but maybe as option ?
 def error_rate_patch(
-    truth_file: Path, out_dir: Path, pred_path: Path, dic: dict, save: bool
+    truth_file: Path,
+    out_dir: Path,
+    pred_path: Path,
+    dic: dict,
+    save: bool,
+    autoscale: bool = True,
 ) -> dict[str, np.ndarray]:
-    """Compute the error rate per patch for a given input.
-    You need to provide full paths
+    """Compute the error rate per patch for a single prediction-label pair.
+    Full paths are needed for zone extraction.
     """
 
     # slice prediction parameters
@@ -544,6 +579,7 @@ def error_rate_patch(
         margin,
         stride,
     )
+    # set margin to 0 for relevance
     effective_patch_size = patch_size - 2 * margin
     out_array = np.zeros(
         (effective_patch_size, effective_patch_size),
@@ -571,14 +607,13 @@ def error_rate_patch(
 
     out_array = gaussian_filter(out_array, sigma=2)
 
-    # save the error rate as a png
-    autoscale = False
     if autoscale:
         vmin = np.min(out_array)
         vmax = np.max(out_array)
     else:
         vmin = 0.025
         vmax = 0.25
+
     if save:
         plt.figure(figsize=(10, 10))
         plt.axis("off")
@@ -980,10 +1015,104 @@ def model_ram_compare(ckpt_list: list[str]) -> None:
         print(f"{Path(ckpt).stem}: {usage:.2f} MB")
 
 
+def error_rate_loop_to_center(
+    truth_dir: Path, out_dir: Path, pred_dir: Path, autoscale=True
+) -> None:
+    """Aggregate error maps and produce relative heatmap + relative error-vs-edge plots."""
+    dic = {}
+    tif_files = list(pred_dir.rglob("*.tif"))
+
+    for pred_path in tqdm(tif_files, desc="Computing error rate"):
+        truth_file = get_truth_path(pred_path, truth_dir)
+        dic = error_rate_patch(
+            truth_file=truth_file,
+            out_dir=out_dir,
+            pred_path=pred_path,
+            dic=dic,
+            save=False,
+            autoscale=autoscale,
+        )
+
+    methods = {}
+    total = {}
+    for key in dic.keys():
+        method = info_extract(Path(key))["method"]
+        if method not in methods:
+            methods[method] = dic[key]
+            total[method] = 1
+        else:
+            methods[method] += dic[key]
+            total[method] += 1
+
+    for key in methods.keys():
+        methods[key] = methods[key] / total[key]
+
+        # === Normalize by center error ===
+        h, w = methods[key].shape
+        center_error = methods[key][h // 2, w // 2]
+        if center_error == 0:
+            center_error = 1e-8
+        rel_map = methods[key] / center_error
+
+        # === Heatmap (relative to center) ===
+        if autoscale:
+            vmin, vmax = np.min(rel_map), np.max(rel_map)
+        else:
+            vmin, vmax = 0.5, 2.0  # around 1.0 baseline
+
+        plt.figure(figsize=(10, 10))
+        plt.axis("off")
+        plt.imshow(
+            rel_map, cmap="plasma", interpolation="nearest", vmin=vmin, vmax=vmax
+        )
+        plt.colorbar()
+        plt.title("Relative Error Map (center = 1.0) : \n" + key)
+        plt.savefig(str(out_dir / f"error_rate_relative_{key}.png"))
+        plt.close()
+
+        # === Error vs distance-to-edge (relative) ===
+        yy, xx = np.indices((h, w))
+        dist_edge = np.minimum.reduce([yy, h - 1 - yy, xx, w - 1 - xx])
+        max_dist = dist_edge.max()
+        error_vs_dist = [
+            methods[key][dist_edge == d].mean() for d in range(max_dist + 1)
+        ]
+
+        error_vs_dist = [val / center_error for val in error_vs_dist]
+
+        plt.figure(figsize=(8, 6))
+        plt.plot(range(max_dist + 1), error_vs_dist, marker="o", label="Relative error")
+
+        # find distance(s) where error == 1.0 (± tolerance)
+        tol = 1e-2
+        equal_idx = [d for d, val in enumerate(error_vs_dist) if abs(val - 1.0) < tol]
+        if equal_idx:
+            d0 = equal_idx[0]
+            plt.scatter(
+                d0, error_vs_dist[d0], color="red", zorder=5, label=f"=1 at d={d0}"
+            )
+            plt.annotate(
+                f"d={d0}",
+                (d0, error_vs_dist[d0]),
+                textcoords="offset points",
+                xytext=(0, 10),
+                ha="center",
+                color="red",
+            )
+
+        plt.xlabel("Distance to Edge (pixels)")
+        plt.ylabel("Relative Error Rate (center = 1.0)")
+        plt.title("Relative Error vs Distance-to-Edge : \n" + key)
+        plt.grid(True)
+        plt.legend()
+        plt.savefig(str(out_dir / f"error_vs_edge_relative_{key}.png"))
+        plt.close()
+
+
 if __name__ == "__main__":
 
     # extract metrics paths from the output directory
-    dir = "/var/tmp/shys/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out20250821/CPU"
+    dir = "/var/tmp/shys/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out20250829"
 
     metrics_paths = list(str(p) for p in Path(dir).rglob("**/metrics.json"))
 
@@ -992,7 +1121,17 @@ if __name__ == "__main__":
 
     baseline = "/var/tmp/shys/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out20250821/CPU/E0_baseline/metrics.json"
 
-    plot_experiments(metrics_paths, baseline=baseline, out_path="cpu_plot.png")
+    # plot_experiments(metrics_paths, baseline=baseline, out_path="cpu_plot.png")
 
-    path = "/var/tmp/shys/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out20250821/20250821160415_E2-2_margin_sweep_patchsize=640/metrics.json"
+    path = "/var/tmp/shys/INFERENCE_HS/DATA/dataset_zone_last/inference_flair/swin-upernet-small/D037_2021/out20250828/20250828151342_E2-2_margin-sweep_patch=1024/metrics.json"
     # log_to_WB(Path(path), sort_per_param="patch size, margin")
+
+    config = "/home/SHys/FLAIR-1/configs/expe/E0_baseline_default.yaml"
+
+    truth_root = "/var/tmp/shys/INFERENCE_HS/DATA/dataset_zone_last/labels_raster/FLAIR_19/D037_2021"
+
+    error_rate_loop_to_center(
+        truth_dir=Path(truth_root),
+        out_dir=Path(dir) / "error_rate_swin_center_margin",
+        pred_dir=Path(dir) / "small_pytorch_gpu",
+    )
